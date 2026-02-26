@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iCxiFi | Activated</title>
+<link rel="preload" href="/logo.svg" as="image" />
+<style>
+
+:root {
+  --panel: #17263a;
+  --panel2: #131f31;
+  --line: rgba(130, 165, 210, 0.22);
+  --line-strong: rgba(107, 255, 190, 0.35);
+  --text: #dbe8f7;
+  --muted: #97abc4;
+  --title: #ffb117;
+  --ok: #6bffbe;
+  --bad: #ff7272;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 700px at 85% 0%, rgba(23, 169, 255, 0.12), rgba(0, 0, 0, 0) 55%),
+    radial-gradient(900px 600px at 10% 100%, rgba(19, 209, 150, 0.08), rgba(0, 0, 0, 0) 60%),
+    linear-gradient(165deg, #091628 0%, #07111f 55%, #060d19 100%);
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 2vw, 24px);
+}
+
+.page {
+  width: clamp(320px, 92vw, 560px);
+  margin: 0 auto;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.16)),
+    linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: clamp(14px, 2.6vw, 22px);
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, rgba(255, 177, 23, 0.07), rgba(23, 169, 255, 0.07) 52%, rgba(19, 209, 150, 0.05));
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.brand {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.brand-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand img {
+  width: 112px;
+  height: auto;
+  opacity: 0.96;
+}
+
+.beta {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.node-pill {
+  border-radius: 10px;
+  border: 1px solid rgba(107, 255, 190, 0.4);
+  background: rgba(107, 255, 190, 0.12);
+  color: var(--ok);
+  padding: 6px 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+h1 {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--title);
+  font-size: clamp(24px, 4vw, 30px);
+  letter-spacing: 0.5px;
+}
+
+.subtitle {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.status {
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.22)),
+    rgba(8, 20, 30, 0.75);
+  padding: 12px;
+  color: var(--ok);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.meta {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.license-value {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.small-note {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.error {
+  color: var(--bad);
+  border-color: rgba(255, 114, 114, 0.45);
+}
+
+.status.loading {
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--line);
+  border-top-color: var(--ok);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.content-ready {
+  display: none;
+}
+
+body.ready .content-ready {
+  display: block;
+}
+
+body.ready .loading-state {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .brand {
+    flex-direction: column;
+    justify-content: center;
+  }
+}
+</style>
+</head>
+<body>
+<script>window._act=fetch("/cgi-bin/icxifi/activation",{cache:"no-store"});</script>
+<main class="page">
+  <section class="panel">
+    <header class="brand">
+      <div class="brand-main">
+        <img src="/logo.svg" alt="iCxiFi" width="112" />
+        <span class="beta">v1.0-beta</span>
+      </div>
+      <div class="node-pill">Activated</div>
+    </header>
+
+    <div class="loading-state" id="loadingState">
+      <h1>iCxiFi</h1>
+      <p class="subtitle">Checking activation…</p>
+      <div class="status loading" id="activationText">
+        <span class="spinner"></span>
+        <span>Verifying…</span>
+      </div>
+    </div>
+    <div class="content-ready" id="contentReady">
+      <h1>Router Activated</h1>
+      <p class="subtitle">This router is already linked to iCxiFi Cloud.</p>
+      <div class="status" id="activationStatus">Status: Activated</div>
+      <p class="meta" id="meta">Router ID: …</p>
+      <p class="meta">License: <span id="licenseKey" class="license-value">—</span></p>
+      <p class="small-note">Bind page access is disabled for this router.</p>
+      <a href="/portal.html" class="btn primary" style="display:inline-block;margin-top:16px;text-decoration:none;color:#1b1404;padding:12px 24px;border-radius:12px;font-weight:700;background:linear-gradient(180deg,#ffc249 0%,#f0a000 100%)">Continue to WiFi</a>
+    </div>
+  </section>
+</main>
+
+<script>
+const metaEl = document.getElementById("meta");
+const loadingState = document.getElementById("loadingState");
+
+(async function init() {
+  try {
+    const r=await (window._act||fetch("/cgi-bin/icxifi/activation",{cache:"no-store"}));
+    const raw=await r.text();
+    let data={};
+    try{data=raw?JSON.parse(raw):{};}catch{throw new Error("Invalid response");}
+    if(!r.ok)throw new Error(data.error||"HTTP "+r.status);
+    if(!data.activated){
+      location.href = "/register.html";
+      return;
+    }
+    metaEl.textContent = "Router ID: " + (data.routerId || "unknown");
+    document.getElementById("licenseKey").textContent = data.licenseKey || "—";
+    document.body.classList.add("ready");
+  } catch (error) {
+    const msg = (error && error.message) ? String(error.message).replace(/</g, "&lt;") : "Error";
+    loadingState.innerHTML = "<h1>Router Activated</h1><p class=\"subtitle\">Unable to verify</p><div class=\"status error\">" + msg + "</div><a href=\"/register.html\" class=\"btn primary\" style=\"display:inline-block;margin-top:16px;text-decoration:none;color:#1b1404;padding:12px 24px;border-radius:12px;font-weight:700\">Go to Register</a>";
+  }
+})();
+</script>
+</body>
+</html>
+

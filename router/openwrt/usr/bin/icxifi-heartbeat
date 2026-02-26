@@ -1,0 +1,51 @@
+#!/bin/sh
+
+set -eu
+
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
+
+if [ -z "$BASE" ] || [ -z "$RID" ] || [ -z "$APIKEY" ]; then
+  echo "ERROR: Missing cloud_base_url, router_id, or router_api_key in /etc/icxifi/" >&2
+  exit 1
+fi
+
+UPTIME_SEC="$(cut -d'.' -f1 /proc/uptime 2>/dev/null || echo 0)"
+FW_VERSION="$(grep '^DISTRIB_RELEASE=' /etc/openwrt_release 2>/dev/null | cut -d= -f2 | tr -d '"' || true)"
+WAN_IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')"
+LAN_IP="$(ip -4 addr show br-lan 2>/dev/null | awk '/inet /{print $2; exit}' | cut -d/ -f1)"
+
+if [ -z "$FW_VERSION" ]; then
+  FW_VERSION="unknown"
+fi
+
+PAYLOAD="$(printf '{"uptimeSec":%s,"fwVersion":"%s","wanIp":"%s","lanIp":"%s"}' \
+  "$UPTIME_SEC" "$FW_VERSION" "${WAN_IP:-}" "${LAN_IP:-}")"
+
+DEBUG="${1:-}"
+if [ "$DEBUG" = "debug" ] || [ "$DEBUG" = "--debug" ]; then
+  echo "BASE=$BASE"
+  echo "RID=$RID"
+  echo "URL=$BASE/api/router/heartbeat"
+  echo "---"
+  RESP="$(curl -sS -m 15 -w "\nHTTP_CODE:%{http_code}" -X POST "$BASE/api/router/heartbeat" \
+    -H "Authorization: Bearer $APIKEY" \
+    -H "X-Router-ID: $RID" \
+    -H "Content-Type: application/json" \
+    -H "ngrok-skip-browser-warning: true" \
+    -d "$PAYLOAD" 2>&1)" || true
+  echo "$RESP"
+  exit 0
+fi
+
+curl -sS -m 15 -X POST "$BASE/api/router/heartbeat" \
+  -H "Authorization: Bearer $APIKEY" \
+  -H "X-Router-ID: $RID" \
+  -H "Content-Type: application/json" \
+  -H "ngrok-skip-browser-warning: true" \
+  -d "$PAYLOAD" >/dev/null || true
+
+# Phase 5: sync pending offline sales when cloud is reachable
+[ -x /usr/bin/icxifi-sync-pending ] && /usr/bin/icxifi-sync-pending || true
+

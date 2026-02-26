@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iCxiFi Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #030407;
+      --bg2: #090b10;
+      --surface: #10141a;
+      --surface2: #0c1015;
+      --border: rgba(255, 255, 255, 0.12);
+      --line: rgba(255, 255, 255, 0.18);
+      --line-strong: rgba(190, 220, 255, 0.34);
+      --text: #f3f7fb;
+      --muted: #a3aebc;
+      --title: #f6f9fd;
+      --accent: #8fcfff;
+      --success: #8fd6b4;
+      --ok: #a7ecc8;
+      --warning: #e8d48f;
+      --danger: #ff9a9a;
+      --sidebar-w: 220px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+      background:
+        radial-gradient(1200px 700px at 85% 0%, rgba(180, 210, 255, 0.1), rgba(0, 0, 0, 0) 55%),
+        radial-gradient(900px 600px at 10% 100%, rgba(160, 200, 255, 0.06), rgba(0, 0, 0, 0) 60%),
+        linear-gradient(165deg, #06080c 0%, #04060a 55%, #030407 100%);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    .login {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 2rem;
+    }
+    .login-panel {
+      width: 100%; max-width: 380px;
+      padding: 2rem;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(0,0,0,0.2)), linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%);
+      box-shadow: 0 30px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .login .logo-img { max-width: 160px; height: auto; margin-bottom: 1.5rem; border-radius: 12px; opacity: 0.95; display: block; margin-left: auto; margin-right: auto; }
+    .login h1 { font-family: 'Orbitron', sans-serif; font-size: 1.75rem; margin-bottom: 0.5rem; color: var(--title); }
+    .login p { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.9rem; }
+    .login form { display: flex; flex-direction: column; gap: 1rem; width: 100%; max-width: 360px; }
+    .login input {
+      font-family: 'JetBrains Mono', monospace;
+      padding: 0.75rem 1rem;
+      background: rgba(4, 8, 14, 0.9);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    .login input:focus { outline: none; border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(143, 207, 255, 0.18); }
+    .login button {
+      padding: 0.75rem 1.5rem;
+      background: linear-gradient(180deg, rgba(160, 220, 255, 0.25), rgba(143, 207, 255, 0.15));
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      color: #f6f9fd;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: filter 0.15s ease;
+    }
+    .login button:hover { filter: brightness(1.15); }
+    .login .error { color: var(--danger); font-size: 0.85rem; }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: var(--sidebar-w);
+      background: linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%);
+      border-right: 1px solid var(--line);
+      padding: 1rem 0;
+      flex-shrink: 0;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+    }
+    .sidebar .logo { padding: 0 1rem 1rem; border-bottom: 1px solid var(--line); margin-bottom: 0.5rem; display: flex; align-items: center; justify-content: center; }
+    .sidebar .logo img { max-width: 120px; height: auto; border-radius: 10px; opacity: 0.95; }
+    .sidebar nav a {
+      display: block; padding: 0.6rem 1rem; color: var(--muted); text-decoration: none; font-size: 0.95rem; font-weight: 500;
+      border-left: 3px solid transparent;
+    }
+    .sidebar nav a:hover { color: var(--text); background: rgba(143, 207, 255, 0.05); }
+    .sidebar nav a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(143, 207, 255, 0.08); }
+    .nav-group { padding: 0.6rem 1rem; color: var(--accent); font-size: 0.95rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; border-left: 3px solid transparent; user-select: none; }
+    .nav-group:hover { background: rgba(143, 207, 255, 0.05); }
+    .nav-group .chevron { font-size: 0.7rem; transition: transform 0.2s; }
+    .nav-group.expanded .chevron { transform: rotate(0deg); }
+    .nav-group:not(.expanded) .chevron { transform: rotate(-90deg); }
+    .nav-sublinks { overflow: hidden; max-height: 200px; transition: max-height 0.2s ease; }
+    .nav-group:not(.expanded) + .nav-sublinks { max-height: 0; }
+    .nav-sublinks a { padding: 0.5rem 1rem 0.5rem 2rem; font-size: 0.9rem; color: var(--muted); display: block; border-left: 3px solid transparent; }
+    .nav-sublinks a:hover { color: var(--text); }
+    .nav-sublinks a .nav-icon { opacity: 0.7; margin-right: 0.4rem; }
+    .sidebar .logout { margin-top: auto; padding: 1rem; }
+    .sidebar .logout button { width: 100%; padding: 0.5rem; background: rgba(255,154,154,0.08); border: 1px solid rgba(255,154,154,0.3); border-radius: 8px; color: var(--danger); cursor: pointer; font-size: 0.85rem; }
+    .sidebar .logout button:hover { background: rgba(255,154,154,0.15); border-color: var(--danger); }
+    .main { flex: 1; padding: 1.5rem 2rem; overflow: auto; }
+    .main h2 { font-family: 'Orbitron', sans-serif; font-size: 1.4rem; margin-bottom: 1.5rem; color: var(--title); letter-spacing: 0.5px; }
+    .main h3 { font-family: 'Rajdhani', sans-serif; font-weight: 600; color: var(--muted); }
+    input[type="checkbox"] { accent-color: var(--accent); }
+    .revenue-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+    @media (max-width: 900px) { .revenue-cards { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 500px) { .revenue-cards { grid-template-columns: 1fr; } }
+    .revenue-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.15));
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.25rem;
+      position: relative;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .revenue-card.daily { border-left: 4px solid var(--accent); }
+    .revenue-card.weekly { border-left: 4px solid var(--success); }
+    .revenue-card.monthly { border-left: 4px solid var(--accent); }
+    .revenue-card.yearly { border-left: 4px solid var(--line-strong); }
+    .revenue-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+    .revenue-card .value { font-size: 1.5rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; text-align: right; display: block; }
+    .filters { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1rem; align-items: center; }
+    .filters select, .filters input { padding: 0.4rem 0.6rem; background: rgba(4, 8, 14, 0.8); border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 0.85rem; }
+    .filters label { color: var(--muted); font-size: 0.85rem; margin-right: 0.25rem; }
+    .filters .btn { padding: 0.4rem 0.8rem; background: linear-gradient(180deg, rgba(143,207,255,0.2), rgba(143,207,255,0.1)); border: 1px solid var(--line-strong); border-radius: 8px; color: var(--title); cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; background: rgba(12, 16, 21, 0.8); }
+    tbody tr { background: rgba(16, 20, 26, 0.4); }
+    tr:hover td { background: rgba(143, 207, 255, 0.05); }
+    .badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600; border: 1px solid transparent; }
+    .badge.active { background: rgba(143, 214, 180, 0.2); color: var(--ok); border-color: rgba(167, 236, 200, 0.35); }
+    .badge.disabled, .badge.redeemed { background: rgba(163, 174, 188, 0.15); color: var(--muted); border-color: var(--line); }
+    .badge.revoked { background: rgba(255, 154, 154, 0.2); color: var(--danger); border-color: rgba(255, 154, 154, 0.4); }
+    .badge.online { background: rgba(143, 214, 180, 0.2); color: var(--ok); border-color: rgba(167, 236, 200, 0.35); }
+    .badge.offline { background: rgba(163, 174, 188, 0.2); color: var(--muted); border-color: var(--line); }
+    .badge.unused { background: rgba(143, 214, 180, 0.2); color: var(--ok); border-color: rgba(167, 236, 200, 0.35); }
+    .badge.bound { background: rgba(143, 207, 255, 0.2); color: var(--accent); border-color: rgba(143, 207, 255, 0.4); }
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+    .empty { color: var(--muted); padding: 2rem; text-align: center; font-style: italic; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .btn-sm { padding: 0.35rem 0.6rem; font-size: 0.8rem; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: rgba(12, 16, 21, 0.8); color: var(--text); font-family: inherit; font-weight: 500; }
+    .btn-sm:hover { border-color: var(--line-strong); color: var(--accent); background: rgba(143, 207, 255, 0.08); }
+    .btn-sm.primary { background: linear-gradient(180deg, rgba(143,207,255,0.25), rgba(143,207,255,0.15)); color: var(--title); border-color: var(--line-strong); }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(3, 4, 7, 0.9); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
+    .modal {
+      background: linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      max-width: 420px;
+      width: 100%;
+      padding: 1.5rem;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    .modal h3 { font-family: 'Orbitron', sans-serif; margin-bottom: 1rem; font-size: 1.1rem; color: var(--title); }
+    .modal .field { margin-bottom: 1rem; }
+    .modal .field label { display: block; color: var(--muted); font-size: 0.8rem; margin-bottom: 0.25rem; }
+    .modal .field input, .modal .field select { width: 100%; padding: 0.5rem 0.75rem; background: rgba(4, 8, 14, 0.9); border: 1px solid var(--line); border-radius: 8px; color: var(--text); }
+    .modal .actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.25rem; }
+    .modal .error { color: var(--danger); font-size: 0.85rem; margin-top: 0.5rem; }
+    .dropdown { position: relative; display: inline-block; }
+    .dropdown-menu { position: absolute; top: 100%; left: 0; margin-top: 4px; background: linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%); border: 1px solid var(--line); border-radius: 10px; min-width: 160px; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    .dropdown-menu button { display: block; width: 100%; padding: 0.5rem 1rem; text-align: left; background: none; border: none; color: var(--text); cursor: pointer; font-size: 0.85rem; }
+    .dropdown-menu button:hover { background: rgba(143, 207, 255, 0.08); color: var(--accent); }
+    .actions-cell { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+    .muted { color: var(--muted); }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--line-strong); text-decoration: underline; }
+    .main { transition: opacity 0.2s ease; }
+    .main.loading { opacity: 0.6; pointer-events: none; }
+    .btn, .btn-sm, .filters .btn { transition: all 0.15s ease; }
+    .btn:active, .btn-sm:active { transform: scale(0.97); }
+    .revenue-card { transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: default; }
+    .revenue-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.4), 0 0 1px rgba(143, 207, 255, 0.2); }
+    .sidebar nav a { transition: all 0.15s ease; }
+    .panel { animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 0.75rem 1.25rem; background: linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 200; animation: slideIn 0.3s ease; }
+    .toast.success { border-left: 4px solid var(--ok); }
+    .toast.error { border-left: 4px solid var(--danger); }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .refresh-btn { padding: 0.4rem 0.8rem; background: rgba(12, 16, 21, 0.6); border: 1px solid var(--line); border-radius: 8px; color: var(--muted); cursor: pointer; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem; transition: all 0.15s ease; font-weight: 500; }
+    .refresh-btn:hover { color: var(--accent); border-color: var(--line-strong); background: rgba(143, 207, 255, 0.08); }
+    .refresh-btn.loading .refresh-icon { animation: spin 0.7s linear infinite; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+    .page-header h2 { margin: 0; }
+    input:focus, select:focus { outline: none; border-color: var(--line-strong); box-shadow: 0 0 0 2px rgba(143, 207, 255, 0.15); transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+    code { background: rgba(12, 16, 21, 0.8); border: 1px solid var(--line); border-radius: 6px; padding: 0.2rem 0.4rem; font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: var(--accent); }
+    .chart-section { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.1)); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; }
+    .chart-wrap { height: 200px; position: relative; }
+    .bulk-gen-card { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.1)); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+    .bulk-gen-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 1rem; align-items: end; }
+    .bulk-gen-form .field-actions { align-self: end; }
+    .bulk-result { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+    .bulk-codes { background: rgba(4, 8, 14, 0.9); border: 1px solid var(--line); border-radius: 8px; padding: 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; max-height: 120px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+    .transfer-layout { display: grid; grid-template-columns: 280px 1fr; gap: 1.5rem; align-items: start; }
+    @media (max-width: 700px) { .transfer-layout { grid-template-columns: 1fr; } }
+    .transfer-form .field { margin-bottom: 1rem; }
+    .transfer-form .field label { display: block; color: var(--muted); font-size: 0.8rem; margin-bottom: 0.25rem; }
+    .transfer-form input, .transfer-form textarea { width: 100%; padding: 0.5rem 0.75rem; background: rgba(4,8,14,0.9); border: 1px solid var(--line); border-radius: 8px; color: var(--text); }
+    .transfer-form textarea { min-height: 80px; resize: vertical; }
+    .transfer-table-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
+    .transfer-table-bar .btn-add { padding: 0.4rem 0.8rem; background: linear-gradient(180deg, rgba(143,207,255,0.25), rgba(143,207,255,0.15)); border: 1px solid var(--line-strong); border-radius: 8px; color: var(--title); cursor: pointer; font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; }
+    .transfer-table-bar .btn-clear { padding: 0.4rem 0.8rem; background: rgba(232, 212, 143, 0.2); border: 1px solid rgba(232, 212, 143, 0.4); border-radius: 8px; color: var(--warning); cursor: pointer; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 0.4rem; }
+    .add-license-modal .license-list { max-height: 200px; overflow-y: auto; }
+    .add-license-modal .license-opt { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.75rem; border-radius: 8px; cursor: pointer; }
+    .add-license-modal .license-opt:hover { background: rgba(143, 207, 255, 0.08); }
+    .add-license-modal .license-opt.added { opacity: 0.5; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="login" class="login">
+    <div class="login-panel">
+    <img src="/admin/logo/ICXIFI_logo_inverted_grey.png" alt="iCxiFi" class="logo-img" onerror="this.style.display='none'">
+    <p>Enter your Admin API key to continue</p>
+    <form id="loginForm">
+      <input type="password" id="apiKey" placeholder="Admin API Key" autocomplete="off">
+      <div id="loginError" class="error"></div>
+      <button type="submit">Continue</button>
+    </form>
+    </div>
+  </div>
+  <div id="app" class="layout" style="display:none">
+    <aside class="sidebar">
+      <div class="logo"><img src="/admin/logo/ICXIFI_logo_inverted_grey.png" alt="iCxiFi" onerror="this.outerHTML='iCxiFi'"></div>
+      <nav>
+        <a href="#" class="nav-link active" data-page="dashboard">Dashboard</a>
+        <div class="nav-group expanded" id="navLicenses" title="Licenses">
+          <span class="chevron">▼</span>
+          <span style="opacity:0.9">📄</span>
+          <span>Licenses</span>
+        </div>
+        <div class="nav-sublinks">
+          <a href="#" class="nav-link" data-page="transfer"><span class="nav-icon">↗</span> Transfer</a>
+          <a href="#" class="nav-link" data-page="allLicenses"><span class="nav-icon">☰</span> All Licenses</a>
+          <a href="#" class="nav-link" data-page="transactions"><span class="nav-icon">↻</span> Transfer History</a>
+        </div>
+        <a href="/dashboard" target="_blank" style="font-size:0.85rem;color:var(--muted);margin-top:0.5rem;display:block;padding:0.6rem 1rem">Client Dashboard →</a>
+      </nav>
+      <div class="logout"><button id="logoutBtn">Log out</button></div>
+    </aside>
+    <main class="main">
+      <div id="pageDashboard" class="panel active">
+        <div class="page-header">
+          <h2>Platform Overview</h2>
+          <button class="refresh-btn" id="dashRefresh" title="Refresh"><span class="refresh-icon">↻</span> Refresh</button>
+        </div>
+        <div class="revenue-cards">
+          <div class="revenue-card daily"><span class="label">Licenses Available</span><span class="value" id="statLicensesAvailable">0</span><span class="muted" style="font-size:0.8rem;margin-top:0.25rem" id="statLicensesDetail">unassigned keys</span></div>
+          <div class="revenue-card weekly" style="border-left-color:var(--success)"><span class="label">Licenses Assigned</span><span class="value" id="statLicensesAssigned">0</span><span class="muted" style="font-size:0.8rem;margin-top:0.25rem">to customers</span></div>
+          <div class="revenue-card monthly"><span class="label">Customers</span><span class="value" id="statCustomers">0</span><span class="muted" style="font-size:0.8rem;margin-top:0.25rem">registered</span></div>
+          <div class="revenue-card yearly"><span class="label">Routers Total</span><span class="value" id="statRouters">0</span><span class="muted" style="font-size:0.8rem;margin-top:0.25rem">registered</span></div>
+        </div>
+        <div class="revenue-cards" style="margin-bottom:1.5rem">
+          <div class="revenue-card" style="border-left-color:var(--ok)"><span class="label">Routers Online</span><span class="value" id="statRoutersOnline">0</span><span class="muted" style="font-size:0.8rem;margin-top:0.25rem">seen in last 2 min</span></div>
+          <div class="revenue-card" style="border-left-color:var(--muted)"><span class="label">Routers Offline</span><span class="value" id="statRoutersOffline">0</span><span class="muted" style="font-size:0.8rem;margin-top:0.25rem">idle</span></div>
+          <div class="revenue-card" style="border-left-color:var(--line-strong)"><span class="label">Vouchers</span><span class="value" id="statVouchers">0</span><span class="muted" style="font-size:0.8rem;margin-top:0.25rem" id="statVouchersDetail">total</span></div>
+        </div>
+      </div>
+      <div id="pageTransactions" class="panel">
+        <div class="page-header">
+          <h2>Transfer History</h2>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <button class="btn-sm" id="txnExportCsv" title="Export as CSV">Export CSV</button>
+            <button class="refresh-btn" id="txnRefresh" title="Refresh"><span class="refresh-icon">↻</span> Refresh</button>
+          </div>
+        </div>
+        <div class="filters">
+          <label>From:</label>
+          <input type="date" id="txnFrom">
+          <label>To:</label>
+          <input type="date" id="txnTo">
+          <button class="btn" id="txnFilter">Filter</button>
+        </div>
+        <table>
+          <thead><tr><th>#</th><th>License</th><th>Recipient</th><th>Date</th></tr></thead>
+          <tbody id="txnBody"></tbody>
+        </table>
+      </div>
+      <div id="pageTransfer" class="panel">
+        <h2>Transfer License</h2>
+        <div class="bulk-gen-card" style="margin-bottom:1.5rem">
+          <h3 style="font-size:1rem;margin-bottom:0.75rem">Assign licenses to client</h3>
+          <p class="muted" style="margin-bottom:1rem;font-size:0.9rem">Assign licenses to a client account. Add licenses to the list, then enter recipient and transfer.</p>
+          <div class="transfer-layout">
+            <div class="transfer-form">
+              <div class="field"><label>Recipient</label><input type="email" id="assignClientEmail" placeholder="client@example.com"></div>
+              <div class="field"><label>Description <span class="muted">(optional)</span></label><textarea id="assignDescription" placeholder="Notes for this transfer"></textarea></div>
+              <button type="button" class="btn-sm primary" id="assignLicenseBtn" style="width:100%;padding:0.6rem;display:flex;align-items:center;justify-content:center;gap:0.5rem"><span>→</span> Transfer</button>
+            </div>
+            <div>
+              <div class="transfer-table-bar">
+                <button type="button" class="btn-add" id="addLicenseBtn">+ Add License</button>
+                <div style="display:flex;align-items:center;gap:0.5rem">
+                  <span class="muted" id="transferTotal">Total: 0</span>
+                  <button type="button" class="btn-clear" id="clearTransferList" title="Clear all">Clear</button>
+                </div>
+              </div>
+              <table>
+                <thead><tr><th>License</th><th>Actions</th></tr></thead>
+                <tbody id="transferListBody"></tbody>
+              </table>
+              <p class="muted" style="font-size:0.85rem;margin-top:0.5rem" id="transferListEmpty">No licenses selected. Click "Add License" to choose from available licenses.</p>
+            </div>
+          </div>
+          <div id="assignResult" class="error" style="display:none;margin-top:0.75rem"></div>
+        </div>
+      </div>
+      <div id="addLicenseModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+          <div class="modal add-license-modal" style="max-width:400px" onclick="event.stopPropagation()">
+            <h3>Add License</h3>
+            <p class="muted" style="font-size:0.9rem;margin-bottom:0.75rem">Select available licenses to add to the transfer list.</p>
+            <div id="addLicenseList" class="license-list"></div>
+            <div class="actions" style="margin-top:1rem"><button type="button" class="btn-sm" id="addLicenseClose">Close</button></div>
+          </div>
+        </div>
+      <div id="pageAllLicenses" class="panel">
+        <h2>All Licenses</h2>
+        <div class="bulk-gen-card" style="margin-bottom:1.5rem">
+          <h3 style="font-size:1rem;margin-bottom:0.75rem">Generate License</h3>
+          <p class="muted" style="margin-bottom:0.75rem;font-size:0.9rem">Create license keys. Each license = 1 router (format: ICXF-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX).</p>
+          <div class="bulk-gen-form">
+            <div class="field"><label>Count</label><input type="number" id="genLicenseCount" min="1" max="20" value="1" placeholder="1" title="Each license = 1 router"></div>
+            <div class="field field-actions"><button type="button" class="btn-sm primary" id="genLicenseBtn">Generate</button></div>
+          </div>
+          <div id="genLicenseResult" class="bulk-result" style="display:none;margin-top:1rem">
+            <p class="muted" style="margin-bottom:0.5rem">Created <span id="genLicenseCreated">0</span> license(s). <button type="button" class="btn-sm" id="genLicenseCopy">Copy</button></p>
+            <pre id="genLicenseCodes" class="bulk-codes"></pre>
+          </div>
+          <div id="genLicenseError" class="error" style="display:none;margin-top:0.5rem"></div>
+        </div>
+        <div style="margin-top:2rem;margin-bottom:1.5rem">
+          <h3 style="font-size:1rem;margin-bottom:0.75rem">License Key List</h3>
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem">
+            <button class="refresh-btn" id="licenseListRefresh" title="Refresh"><span class="refresh-icon">↻</span> Refresh</button>
+          </div>
+          <table>
+            <thead><tr><th>License Key</th><th>Status</th><th>Assigned To</th><th>Expires</th></tr></thead>
+            <tbody id="licenseListBody"></tbody>
+          </table>
+        </div>
+        <p class="muted" style="margin-bottom:1rem">Assign license keys to client accounts. Clients use them in their dashboard to register routers.</p>
+        <div class="filters" style="margin-bottom:1.5rem">
+          <label>Check license:</label>
+          <input type="text" id="licenseCheckKey" placeholder="ICXF-59B10-B44A2-F629A-69A36-94A9A-A1B9D" class="mono" style="width:280px">
+          <button type="button" class="btn-sm primary" id="licenseCheckBtn">Check</button>
+        </div>
+        <div id="licenseCheckResult" class="revenue-card" style="display:none;max-width:420px">
+          <div class="label">License check</div>
+          <div id="licenseCheckContent"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const API_BASE = '';
+    function apiKey() { return sessionStorage.getItem('icxifi_admin_key') || ''; }
+    function toast(msg, type = 'success') {
+      const el = document.createElement('div');
+      el.className = 'toast ' + type;
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+    function setApiKey(k) { sessionStorage.setItem('icxifi_admin_key', k); }
+    function clearApiKey() { sessionStorage.removeItem('icxifi_admin_key'); }
+    async function api(path, opts = {}) {
+      const { method = 'GET', body } = opts;
+      const headers = { 'X-Admin-API-Key': apiKey() };
+      if (body) headers['Content-Type'] = 'application/json';
+      const r = await fetch(API_BASE + path, { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+      if (r.status === 401) return { _authFailed: true };
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 503) throw new Error(j.error || 'Admin API not configured');
+      if (!j.ok && !j._authFailed) throw new Error(j.error || 'Request failed');
+      return j;
+    }
+    function fmt(t) { if (!t) return '-'; const d = new Date(t); return isNaN(d.getTime()) ? t : d.toLocaleString(); }
+    function timeAgo(t) { if (!t) return '-'; const d = new Date(t); if (isNaN(d.getTime())) return t; const s = Math.floor((Date.now() - d) / 1000); if (s < 60) return 'now'; if (s < 3600) return Math.floor(s/60)+'m ago'; if (s < 86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
+    let _routers = [];
+    let _transferList = [];
+    let _availableLicenses = [];
+
+    document.getElementById('loginForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const key = document.getElementById('apiKey').value.trim();
+      const err = document.getElementById('loginError');
+      const btn = document.querySelector('#loginForm button[type=submit]');
+      err.textContent = '';
+      if (!key) { err.textContent = 'Please enter your API key'; return; }
+      setApiKey(key);
+      btn.disabled = true;
+      btn.textContent = 'Checking…';
+      try {
+        const res = await api('/api/admin/routers');
+        if (res && res._authFailed) { clearApiKey(); err.textContent = 'Invalid API key.'; return; }
+        document.getElementById('login').style.display = 'none';
+        document.getElementById('app').style.display = 'flex';
+        load();
+      } catch (x) { clearApiKey(); err.textContent = x.message || 'Invalid credentials'; }
+      finally { btn.disabled = false; btn.textContent = 'Continue'; }
+    };
+
+    document.getElementById('logoutBtn').onclick = () => { clearApiKey(); location.reload(); };
+
+    const pageIdMap = { dashboard: 'pageDashboard', transfer: 'pageTransfer', allLicenses: 'pageAllLicenses', transactions: 'pageTransactions' };
+    document.getElementById('navLicenses').onclick = () => {
+      document.getElementById('navLicenses').classList.toggle('expanded');
+    };
+    document.querySelectorAll('.nav-link').forEach(a => {
+      a.onclick = (e) => {
+        if (a.dataset.page) {
+          e.preventDefault();
+          document.querySelectorAll('.nav-link').forEach(x => x.classList.remove('active'));
+          document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+          a.classList.add('active');
+          const pageId = pageIdMap[a.dataset.page];
+          const page = pageId ? document.getElementById(pageId) : null;
+          if (page) page.classList.add('active');
+          if (a.dataset.page === 'dashboard') loadDashboard();
+          if (a.dataset.page === 'transactions') loadTransferHistory();
+          if (a.dataset.page === 'transfer' || a.dataset.page === 'allLicenses') loadLicenseList();
+        }
+      };
+    });
+
+    function setLoading(on) {
+      const main = document.querySelector('.main');
+      if (main) main.classList.toggle('loading', on);
+    }
+    async function loadDashboard() {
+      setLoading(true);
+      try {
+        const res = await api('/api/admin/stats');
+        if (res && res._authFailed) { clearApiKey(); location.reload(); return; }
+        const lic = res.licenses || {};
+        const rtr = res.routers || {};
+        const vch = res.vouchers || {};
+        document.getElementById('statLicensesAvailable').textContent = lic.unassigned ?? 0;
+        document.getElementById('statLicensesDetail').textContent = 'ready to assign';
+        document.getElementById('statLicensesAssigned').textContent = lic.assigned ?? 0;
+        document.getElementById('statCustomers').textContent = res.customers ?? 0;
+        document.getElementById('statRouters').textContent = rtr.total ?? 0;
+        document.getElementById('statRoutersOnline').textContent = rtr.online ?? 0;
+        const offlineEl = document.getElementById('statRoutersOffline');
+        if (offlineEl) offlineEl.textContent = rtr.offline ?? 0;
+        document.getElementById('statVouchers').textContent = vch.total ?? 0;
+        document.getElementById('statVouchersDetail').textContent = vch.redeemed + ' redeemed';
+      } catch (_) {}
+      finally { setLoading(false); }
+    }
+
+    async function loadLicenseList() {
+      try {
+        const res = await api('/api/admin/licenses');
+        if (res && res._authFailed) { clearApiKey(); location.reload(); return; }
+        const licenses = res.licenses || [];
+        const tb = document.getElementById('licenseListBody');
+        if (tb) {
+          tb.innerHTML = licenses.length
+            ? licenses.map((l) => {
+                const statusClass = l.status === 'bound' ? 'badge bound' : 'badge active';
+                const statusText = l.status === 'bound' ? 'Bound' : 'Available';
+                const exp = l.expiresAt ? fmt(l.expiresAt) : 'Never';
+                return `<tr><td class="mono">${(l.key || '').replace(/</g, '&lt;')}</td><td><span class="${statusClass}">${statusText}</span></td><td>${(l.assignedTo || '-').replace(/</g, '&lt;')}</td><td>${exp}</td></tr>`;
+              }).join('')
+            : '<tr><td colspan="4" class="empty">No licenses yet. Generate some above.</td></tr>';
+        }
+        _availableLicenses = licenses.filter((l) => l.status === 'available');
+        renderTransferList();
+      } catch (_) {
+        const tb = document.getElementById('licenseListBody');
+        if (tb) tb.innerHTML = '<tr><td colspan="4" class="empty">Error loading</td></tr>';
+      }
+    }
+
+    async function loadTransferHistory() {
+      setLoading(true);
+      let url = '/api/admin/licenses/transfers?limit=200';
+      const from = document.getElementById('txnFrom')?.value;
+      const to = document.getElementById('txnTo')?.value;
+      if (from) url += '&from=' + encodeURIComponent(from);
+      if (to) url += '&to=' + encodeURIComponent(to);
+      try {
+        const res = await api(url);
+        if (res && res._authFailed) { clearApiKey(); location.reload(); return; }
+        const transfers = res.transfers || [];
+        const tb = document.getElementById('txnBody');
+        tb.innerHTML = transfers.length ? transfers.map((t, i) => `<tr><td>${i+1}</td><td class="mono">${(t.key || '-').replace(/</g, '&lt;')}</td><td>${(t.recipient || '-').replace(/</g, '&lt;')}</td><td>${fmt(t.date)}</td></tr>`).join('') : '<tr><td colspan="4" class="empty">No transfers yet</td></tr>';
+      } catch (x) {
+        const tb = document.getElementById('txnBody');
+        const msg = x && x.message ? String(x.message) : 'Error loading';
+        tb.innerHTML = '<tr><td colspan="4" class="empty">' + msg.replace(/</g, '&lt;') + '</td></tr>';
+      }
+      finally { setLoading(false); }
+    }
+
+    function spinRefresh(btn, fn) {
+      return async () => {
+        if (btn.classList.contains('loading')) return;
+        btn.classList.add('loading');
+        try { await fn(); } finally { btn.classList.remove('loading'); }
+      };
+    }
+    function renderTransferList() {
+      const tb = document.getElementById('transferListBody');
+      const empty = document.getElementById('transferListEmpty');
+      if (!tb) return;
+      tb.innerHTML = _transferList.map((key) => `<tr><td class="mono">${(key || '').replace(/</g, '&lt;')}</td><td><button type="button" class="btn-sm" title="Remove" data-remove="${(key || '').replace(/"/g, '&quot;')}" style="padding:0.25rem 0.4rem">✕</button></td></tr>`).join('');
+      if (empty) empty.style.display = _transferList.length ? 'none' : 'block';
+      const totalEl = document.getElementById('transferTotal');
+      if (totalEl) totalEl.textContent = 'Total: ' + _transferList.length;
+      tb.querySelectorAll('[data-remove]').forEach(btn => {
+        btn.onclick = () => { _transferList = _transferList.filter((k) => k !== btn.dataset.remove); renderTransferList(); };
+      });
+    }
+    function openAddLicenseModal() {
+      const added = new Set(_transferList);
+      const list = document.getElementById('addLicenseList');
+      if (!list) return;
+      list.innerHTML = _availableLicenses.length
+        ? _availableLicenses.map((l) => {
+            const key = l.key || '';
+            const isAdded = added.has(key);
+            return `<div class="license-opt ${isAdded ? 'added' : ''}" data-key="${key.replace(/"/g, '&quot;')}">${key.replace(/</g, '&lt;')} ${isAdded ? '(added)' : ''}</div>`;
+          }).join('')
+        : '<p class="muted">No available licenses. Generate some first.</p>';
+      list.querySelectorAll('.license-opt:not(.added)').forEach((el) => {
+        el.onclick = () => { _transferList.push(el.dataset.key); renderTransferList(); openAddLicenseModal(); /* refresh modal to show (added) */ };
+      });
+      document.getElementById('addLicenseModal').style.display = 'flex';
+    }
+    async function assignLicense() {
+      const keys = [..._transferList];
+      const email = (document.getElementById('assignClientEmail')?.value || '').trim();
+      const errEl = document.getElementById('assignResult');
+      errEl.style.display = 'none';
+      errEl.textContent = '';
+      if (!keys.length) { errEl.textContent = 'Add one or more licenses to the list'; errEl.style.display = 'block'; return; }
+      if (!email) { errEl.textContent = 'Enter recipient email'; errEl.style.display = 'block'; return; }
+      try {
+        let okCount = 0;
+        let lastError = '';
+        for (const key of keys) {
+          const res = await api('/api/admin/licenses/' + encodeURIComponent(key) + '/assign', { method: 'PATCH', body: { email } });
+          if (res._authFailed) return;
+          if (res.ok) okCount += 1;
+          else lastError = res.error || 'Failed';
+        }
+        if (okCount > 0) {
+          toast(okCount + ' license(s) transferred to ' + email);
+          _transferList = [];
+          renderTransferList();
+          loadLicenseList();
+        }
+        if (okCount < keys.length) { errEl.textContent = lastError || (keys.length - okCount) + ' failed'; errEl.style.display = 'block'; }
+      } catch (x) { errEl.textContent = x.message || 'Request failed'; errEl.style.display = 'block'; }
+    }
+    async function checkLicense() {
+      const key = (document.getElementById('licenseCheckKey')?.value || '').trim();
+      if (!key) { toast('Enter license key', 'error'); return; }
+      try {
+        const res = await api('/api/admin/licenses/check?key=' + encodeURIComponent(key));
+        if (res._authFailed) { clearApiKey(); location.reload(); return; }
+        const el = document.getElementById('licenseCheckResult');
+        const content = document.getElementById('licenseCheckContent');
+        el.style.display = 'block';
+        if (!res.found) {
+          content.innerHTML = `<p class="muted"><strong>${(key || '').replace(/</g, '&lt;')}</strong> — not found</p>`;
+          return;
+        }
+        const validClass = res.valid ? 'badge active' : 'badge revoked';
+        const validText = res.valid ? 'Valid' : (res.expired ? 'Expired' : 'Inactive');
+        const exp = res.expiresAt ? fmt(res.expiresAt) : 'Never';
+        content.innerHTML = `
+          <p><span class="badge ${validClass}">${validText}</span> <strong class="mono">${(res.key || '').replace(/</g, '&lt;')}</strong></p>
+          <p class="muted" style="margin-top:0.5rem">Router: ${res.usedCount ? 'Registered' : 'Available'}</p>
+          <p class="muted">Expires: ${exp}</p>
+        `;
+      } catch (x) { toast(x.message || 'Check failed', 'error'); }
+    }
+    let _lastGenLicenses = [];
+    async function genLicense() {
+      const count = Math.min(20, Math.max(1, parseInt(document.getElementById('genLicenseCount')?.value, 10) || 1));
+      const errEl = document.getElementById('genLicenseError');
+      errEl.style.display = 'none';
+      try {
+        const res = await api('/api/admin/licenses/generate', { method: 'POST', body: { count } });
+        if (res._authFailed) return;
+        _lastGenLicenses = res.licenses || [];
+        document.getElementById('genLicenseCreated').textContent = res.created || 0;
+        document.getElementById('genLicenseCodes').textContent = _lastGenLicenses.map((l) => l.key).join('\n');
+        document.getElementById('genLicenseResult').style.display = 'block';
+        toast('Generated ' + res.created + ' license(s)');
+        loadLicenseList();
+      } catch (x) { errEl.textContent = x.message || 'Failed'; errEl.style.display = 'block'; }
+    }
+    document.getElementById('genLicenseBtn').onclick = genLicense;
+    document.getElementById('genLicenseCopy').onclick = () => {
+      const txt = _lastGenLicenses.map((l) => l.key).join('\n');
+      navigator.clipboard?.writeText(txt).then(() => toast('Copied')).catch(() => toast('Copy failed', 'error'));
+    };
+
+    async function exportTransferHistoryCsv(from, to) {
+      let url = '/api/admin/licenses/transfers?limit=5000';
+      if (from) url += '&from=' + encodeURIComponent(from);
+      if (to) url += '&to=' + encodeURIComponent(to);
+      const res = await api(url);
+      if (res._authFailed) return;
+      const transfers = res.transfers || [];
+      const esc = (s) => `"${String(s || '').replace(/"/g, '""')}"`;
+      const rows = ['#,License,Recipient,Date'];
+      transfers.forEach((t, i) => rows.push([i + 1, esc(t.key || '-'), esc(t.recipient || '-'), esc(fmt(t.date))].join(',')));
+      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'transfer-history-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Exported ' + transfers.length + ' rows');
+    }
+    document.getElementById('txnExportCsv').onclick = async () => {
+      try {
+        const from = document.getElementById('txnFrom')?.value;
+        const to = document.getElementById('txnTo')?.value;
+        await exportTransferHistoryCsv(from, to);
+      } catch (x) { toast(x.message || 'Export failed', 'error'); }
+    };
+
+    async function load() {
+      loadDashboard();
+      loadLicenseList();
+      renderTransferList();
+      document.getElementById('txnFilter').onclick = () => loadTransferHistory();
+      document.getElementById('licenseListRefresh').onclick = spinRefresh(document.getElementById('licenseListRefresh'), loadLicenseList);
+      document.getElementById('dashRefresh').onclick = spinRefresh(document.getElementById('dashRefresh'), loadDashboard);
+      document.getElementById('licenseCheckBtn').onclick = checkLicense;
+      document.getElementById('assignLicenseBtn').onclick = assignLicense;
+      document.getElementById('addLicenseBtn').onclick = openAddLicenseModal;
+      document.getElementById('addLicenseClose').onclick = () => { document.getElementById('addLicenseModal').style.display = 'none'; };
+      document.getElementById('clearTransferList').onclick = () => { _transferList = []; renderTransferList(); };
+      document.getElementById('txnRefresh').onclick = spinRefresh(document.getElementById('txnRefresh'), loadTransferHistory);
+      const autoRefreshEl = document.getElementById('autoRefresh');
+      if (autoRefreshEl) autoRefreshEl.onchange = (e) => {
+        if (e.target.checked) window._autoRefresh = setInterval(loadDashboard, 30000);
+        else if (window._autoRefresh) { clearInterval(window._autoRefresh); window._autoRefresh = null; }
+      };
+    }
+
+    if (apiKey()) { document.getElementById('login').style.display = 'none'; document.getElementById('app').style.display = 'flex'; load(); }
+  </script>
+</body>
+</html>

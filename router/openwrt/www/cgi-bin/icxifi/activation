@@ -1,0 +1,64 @@
+#!/bin/sh
+# Returns JSON { activated, routerId, licenseKey? }.
+# Activated means router credentials are valid in cloud (not just local key-file present).
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+RID="${RID:-unknown}"
+LIC="$(tr -d '\r\n' < /etc/icxifi/license_key 2>/dev/null || true)"
+
+if [ "$RID" = "unknown" ] || [ -z "$RID" ]; then
+  RID="$(ip -o link show br-lan 2>/dev/null | awk '/link\/ether/ {print tolower($17); exit}')"
+fi
+if [ -z "$RID" ]; then
+  RID="$(ip -o link show eth0 2>/dev/null | awk '/link\/ether/ {print tolower($17); exit}')"
+fi
+[ -z "$RID" ] && RID="unknown"
+
+ACTIVATED=0
+
+if [ -s /etc/icxifi/router_api_key ]; then
+  BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+  APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
+  if [ -n "$BASE" ] && [ -n "$APIKEY" ]; then
+    BASE="${BASE%/}"
+    case "$BASE" in
+      */api) BASE="${BASE%/api}" ;;
+    esac
+    RESP="$(curl -sS -m 6 -X GET "$BASE/api/router/state" \
+      -H "Authorization: Bearer $APIKEY" \
+      -H "X-Router-ID: $RID" \
+      -H "ngrok-skip-browser-warning: true" \
+      -w '\n%{http_code}' 2>/dev/null)" || true
+    HTTP_CODE="$(printf '%s' "$RESP" | tail -n1)"
+    BODY="$(printf '%s' "$RESP" | sed '$d')"
+    if [ "$HTTP_CODE" = "200" ] && printf '%s' "$BODY" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+      STATE_REMOTE="$(printf '%s' "$BODY" | sed -n 's/.*"state"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null | head -1)"
+      if [ "$STATE_REMOTE" = "active" ]; then
+        ACTIVATED=1
+      fi
+      LIC_REMOTE="$(printf '%s' "$BODY" | sed -n 's/.*"licenseKey"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null | head -1)"
+      if [ -n "$LIC_REMOTE" ]; then
+        LIC="$LIC_REMOTE"
+        mkdir -p /etc/icxifi
+        printf '%s' "$LIC" > /etc/icxifi/license_key 2>/dev/null || true
+        chmod 600 /etc/icxifi/license_key 2>/dev/null || true
+      fi
+    elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ] || [ "$HTTP_CODE" = "404" ]; then
+      # Stale or invalid local credentials: clear local registration markers.
+      rm -f /etc/icxifi/router_api_key /etc/icxifi/license_key 2>/dev/null || true
+      LIC=""
+    fi
+  fi
+fi
+
+if [ "$ACTIVATED" = "1" ]; then
+  if [ -n "$LIC" ]; then
+    printf '{"activated":true,"routerId":"%s","licenseKey":"%s"}\n' "$RID" "$(printf '%s' "$LIC" | sed 's/\\/\\\\/g;s/"/\\"/g')"
+  else
+    printf '{"activated":true,"routerId":"%s"}\n' "$RID"
+  fi
+else
+  printf '{"activated":false,"routerId":"%s"}\n' "$RID"
+fi

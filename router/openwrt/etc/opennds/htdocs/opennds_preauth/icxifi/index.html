@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
+  <meta name="theme-color" content="#030407">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>iCxiFi WiFi</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#030407;color:#f3f7fb;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh;-webkit-text-size-adjust:100%}
+    .portal{min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px 12px 32px}
+    .top-banner{width:100%;max-width:740px;background:#0d1117;border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#8fcfff;text-align:center;font-size:14px;font-weight:700;padding:10px 12px;margin-bottom:16px}
+    .card{width:100%;max-width:540px;background:#10141a;border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:16px 14px 20px;text-align:center}
+    .status{margin:0;font-size:1.8rem;font-weight:700;color:#ff9a9a}.status.connected{color:#a7ecc8}
+    .meta-line{margin:8px 0 0;font-size:13px;color:#a3aebc}
+    .timer-wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px auto 14px}
+    .timer-block{background:rgba(4,8,14,.6);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:10px 8px}
+    .num{display:block;font-size:1.4rem;font-weight:700;color:#f6f9fd}
+    .label{display:block;margin-top:4px;font-size:11px;color:#a3aebc}
+    .btn-stack{display:grid;gap:10px;max-width:340px;margin:0 auto;width:100%}
+    .btn{display:block;width:100%;border:1px solid;border-radius:10px;color:#f6f9fd;font-size:16px;font-weight:700;padding:14px 16px;min-height:48px;cursor:pointer;background:rgba(143,207,255,.2);border-color:rgba(190,220,255,.3)}
+    .btn-green{background:rgba(143,214,180,.3);border-color:rgba(167,236,200,.4)}
+    .btn-orange{background:rgba(232,184,109,.2);border-color:rgba(232,184,109,.4)}
+    .btn-dark{background:rgba(74,90,112,.25);border-color:rgba(255,255,255,.15);color:#a3aebc}
+    .btn:disabled{opacity:.4;cursor:not-allowed}
+    .panel{margin-top:16px;border:1px solid rgba(255,255,255,.15);border-radius:12px;background:rgba(4,8,14,.5);padding:14px}
+    .hidden{display:none}
+    .voucher-row{display:flex;gap:10px;flex-wrap:wrap}
+    .voucher-row input{flex:1;min-width:0;min-height:44px;border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:12px 14px;font-size:16px;background:rgba(4,8,14,.8);color:#f3f7fb}
+    .status-box{margin-top:14px;border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(4,8,14,.7);padding:12px 14px;min-height:60px;font-size:11px;color:#a3aebc;white-space:pre-wrap;word-break:break-word}
+    .footer{margin:16px 0 6px;color:#a3aebc;font-size:12px;opacity:.8}
+    .coin-modal{border:1px solid rgba(255,255,255,.15);border-radius:14px;background:#10141a;padding:18px}
+    .compact{font-size:14px;padding:12px 16px;min-height:44px}
+  </style>
+  <link rel="preload" href="/opennds_preauth/icxifi/style.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="/opennds_preauth/icxifi/style.css"></noscript>
+</head>
+<body>
+  <main class="portal">
+    <div class="top-banner">WELCOME TO ICXIFI WIFI</div>
+
+    <section class="card">
+      <h1 id="statusWord" class="status disconnected">DISCONNECTED</h1>
+
+      <p class="meta-line">
+        MAC: <span id="clientMac">unknown</span>
+        <span class="sep">|</span>
+        IP: <span id="clientIp">unknown</span>
+      </p>
+      <p class="meta-line">
+        DL: <span id="downSpeed">--</span> Mbps
+        <span class="sep">|</span>
+        UL: <span id="upSpeed">--</span> Mbps
+      </p>
+
+      <div class="timer-wrap">
+        <div class="timer-block">
+          <span id="tDays" class="num">00</span>
+          <span class="label">DD</span>
+        </div>
+        <div class="timer-block">
+          <span id="tHours" class="num">00</span>
+          <span class="label">HH</span>
+        </div>
+        <div class="timer-block">
+          <span id="tMins" class="num">00</span>
+          <span class="label">MIN</span>
+        </div>
+        <div class="timer-block">
+          <span id="tSecs" class="num">00</span>
+          <span class="label">SEC</span>
+        </div>
+      </div>
+
+      <div class="btn-stack">
+        <button id="insertCoinBtn" class="btn btn-blue">INSERT COIN</button>
+        <button id="continueBtn" class="btn btn-green" disabled>CONTINUE</button>
+        <button id="showRatesBtn" class="btn btn-orange">WIFI RATES</button>
+        <button id="showVoucherBtn" class="btn btn-dark">VOUCHER</button>
+      </div>
+
+      <section id="ratesPanel" class="panel hidden">
+        <h2>Available Rates</h2>
+        <div id="ratesGrid" class="rates-grid"></div>
+      </section>
+
+      <section id="voucherPanel" class="panel hidden">
+        <h2>Voucher Code</h2>
+        <div class="voucher-row">
+          <input id="voucherInput" type="text" placeholder="Enter voucher code" inputmode="text" autocapitalize="characters" autocomplete="off" maxlength="20">
+          <button id="redeemBtn" class="btn btn-blue compact">REDEEM</button>
+        </div>
+      </section>
+
+      <pre id="statusBox" class="status-box">Loading profile...</pre>
+
+      <p class="footer">POWERED BY ICXIFI | ICONNECT TECHNOLOGIES</p>
+    </section>
+  </main>
+
+  <dialog id="coinModal" class="coin-modal">
+    <h3>Insert Coin</h3>
+    <p>Insert coin at vendo and wait for voucher code from the machine.</p>
+    <div class="coin-input-row">
+      <input id="coinVoucherInput" type="text" placeholder="I have a code" inputmode="text" autocapitalize="characters" autocomplete="off">
+      <button id="coinRedeemBtn" class="btn btn-green compact">USE CODE</button>
+    </div>
+    <div class="coin-actions">
+      <button id="closeCoinModal" class="btn btn-dark compact">CLOSE</button>
+    </div>
+  </dialog>
+
+  <noscript><p class="noscript-msg">JavaScript is required to connect. Please enable it and reload.</p></noscript>
+  <script src="/opennds_preauth/icxifi/app.js" defer></script>
+</body>
+</html>

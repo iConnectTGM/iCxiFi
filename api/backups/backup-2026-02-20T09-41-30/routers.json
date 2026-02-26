@@ -1,0 +1,65 @@
+[
+  {
+    "_id": "6996c83e8970ca346399c090",
+    "routerId": "9c:ce:88:48:41:9f",
+    "__v": 0,
+    "commandQueue": [],
+    "createdAt": "2026-02-19T08:22:00.125Z",
+    "hotspot": {
+      "ssid": "iCxiFi PisoWifi Vendo",
+      "welcomeMsg": null
+    },
+    "lastActivatedAt": null,
+    "lastSeenAt": "2026-02-20T09:40:39.906Z",
+    "licenseKey": "LIC-STARTER-0001",
+    "meta": {
+      "uptimeSec": 9743,
+      "fwVersion": "'24.10.5'",
+      "wanIp": "192.168.1.17",
+      "lanIp": "10.0.0.1"
+    },
+    "name": "iCxiFi TEST1",
+    "portal": {
+      "theme": "default"
+    },
+    "profile": {
+      "mode": "hybrid",
+      "currency": "PHP",
+      "timezone": "Asia/Manila",
+      "voucherLength": 8,
+      "rates": [
+        {
+          "amount": 5,
+          "minutes": 15,
+          "downloadKbps": 10000,
+          "uploadKbps": 10000,
+          "downloadQuotaKB": 0,
+          "uploadQuotaKB": 0
+        },
+        {
+          "amount": 10,
+          "minutes": 35,
+          "downloadKbps": 10000,
+          "uploadKbps": 10000,
+          "downloadQuotaKB": 0,
+          "uploadQuotaKB": 0
+        },
+        {
+          "amount": 20,
+          "minutes": 90,
+          "downloadKbps": 10000,
+          "uploadKbps": 10000,
+          "downloadQuotaKB": 0,
+          "uploadQuotaKB": 0
+        }
+      ],
+      "limits": {
+        "maxCreatePerMinute": 60,
+        "maxRedeemPerMinute": 120
+      }
+    },
+    "routerApiKeyHash": "83258b0d56a1df9b8d17b3c732a2ce2a0a80be934546dffe806f4928d1485717",
+    "status": "active",
+    "tenantId": null
+  }
+]

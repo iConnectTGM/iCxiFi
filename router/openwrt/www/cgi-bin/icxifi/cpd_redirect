@@ -1,0 +1,9 @@
+#!/bin/sh
+# Invoked by uhttpd error_page on 404. Return 302 redirect to portal (for CPD and any unknown path).
+# Redirect to portal. Must use :2080 - port 80 is intercepted by OpenNDS
+set -e
+GW="$(cat /etc/icxifi/gateway_ip 2>/dev/null | tr -d '\r\n' | cut -d/ -f1)"
+GW="${GW:-10.0.0.1}"
+REDIRECT="http://${GW}:2080/cgi-bin/icxifi/portal_redirect"
+printf 'Status: 302 Found\r\nLocation: %s\r\nContent-Type: text/html\r\n\r\n' "$REDIRECT"
+printf '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=%s"></head><body>Redirecting...</body></html>' "$REDIRECT"

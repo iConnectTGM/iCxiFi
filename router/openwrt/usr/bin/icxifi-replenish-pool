@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# Phase 5: Replenish offline voucher pool from cloud.
+# Pool format: one line per voucher = code|minutes|amount|expiresAt
+#
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+POOL_LINES="/etc/icxifi/voucher_pool.txt"
+POOL_MAX="${ICXIFI_POOL_MAX:-15}"
+
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
+
+[ -z "$BASE" ] || [ -z "$RID" ] || [ -z "$APIKEY" ] && exit 1
+
+current=0
+[ -s "$POOL_LINES" ] && current="$(wc -l < "$POOL_LINES")"
+[ "$current" -ge "$POOL_MAX" ] 2>/dev/null && exit 0
+
+need=$((POOL_MAX - current))
+[ "$need" -lt 1 ] && exit 0
+[ "$need" -gt 10 ] && need=10
+
+payload="$(printf '{"count":%s,"deviceId":"pool"}' "$need")"
+resp="$(curl -sS -m 30 -X POST "$BASE/api/router/vouchers/batch" \
+  -H "ngrok-skip-browser-warning: true" \
+  -H "Authorization: Bearer $APIKEY" \
+  -H "X-Router-ID: $RID" \
+  -H "Content-Type: application/json" \
+  -d "$payload" 2>/dev/null)" || exit 1
+
+printf '%s' "$resp" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || exit 1
+
+mkdir -p /etc/icxifi
+tmp_resp="/tmp/icxifi_batch_resp.$$"
+printf '%s' "$resp" > "$tmp_resp"
+
+if command -v jsonfilter >/dev/null 2>&1; then
+  i=0
+  while true; do
+    code="$(jsonfilter -i "$tmp_resp" -e "@.vouchers[$i].code" 2>/dev/null || true)"
+    [ -z "$code" ] && break
+    minutes="$(jsonfilter -i "$tmp_resp" -e "@.vouchers[$i].minutes" 2>/dev/null || echo 0)"
+    amount="$(jsonfilter -i "$tmp_resp" -e "@.vouchers[$i].amount" 2>/dev/null || echo 0)"
+    expires="$(jsonfilter -i "$tmp_resp" -e "@.vouchers[$i].expiresAt" 2>/dev/null || echo "")"
+    printf '%s|%s|%s|%s\n' "$code" "${minutes:-0}" "${amount:-0}" "$expires" >> "$POOL_LINES"
+    i=$((i + 1))
+  done
+fi
+
+rm -f "$tmp_resp"
+exit 0

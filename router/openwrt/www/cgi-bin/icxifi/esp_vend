@@ -1,0 +1,274 @@
+#!/bin/sh
+
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+LOG_FILE="/tmp/icxifi_auth_debug.log"
+LOG_MAX_BYTES=262144
+RL_WINDOW_SECONDS=10
+RL_MAX_REQUESTS="${ICXIFI_RL_MAX_REQUESTS:-8}"
+
+BASE_FILE="/etc/icxifi/cloud_base_url"
+RID_FILE="/etc/icxifi/router_id"
+APIKEY_FILE="/etc/icxifi/router_api_key"
+
+print_json() {
+  printf 'Content-Type: application/json\r\n\r\n%s\n' "$1"
+}
+
+print_status_json() {
+  code="$1"
+  reason="$2"
+  body="$3"
+  printf 'Status: %s %s\r\nContent-Type: application/json\r\n\r\n%s\n' "$code" "$reason" "$body"
+}
+
+rotate_log() {
+  if [ -f "$LOG_FILE" ]; then
+    size="$(wc -c < "$LOG_FILE" 2>/dev/null || echo 0)"
+    case "$size" in
+      ''|*[!0-9]*) size=0 ;;
+    esac
+    if [ "$size" -gt "$LOG_MAX_BYTES" ]; then
+      mv -f "$LOG_FILE" "${LOG_FILE}.1" 2>/dev/null || true
+      : > "$LOG_FILE"
+    fi
+  fi
+}
+
+log_debug() {
+  rotate_log
+  ts="$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date)"
+  printf '%s %s\n' "$ts" "$*" >> "$LOG_FILE"
+}
+
+urldecode() {
+  value="${1//+/ }"
+  printf '%b' "${value//%/\\x}"
+}
+
+is_uint() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+safe_token() {
+  case "$1" in
+    ''|*[!A-Za-z0-9._:-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+safe_mac() {
+  case "$1" in
+    ''|*[!A-Fa-f0-9:-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+safe_code() {
+  # Backward compatible:
+  # - legacy: ICXF-XXXXXXXX
+  # - current: XXXXXXXXX (alphanumeric only)
+  printf '%s' "$1" | grep -Eq '^(ICXF-)?[A-Z0-9]{4,32}$'
+}
+
+json_get_string() {
+  key="$1"
+  json="$2"
+  printf '%s' "$json" | tr -d '\r\n' | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n 1
+}
+
+json_get_number() {
+  key="$1"
+  json="$2"
+  printf '%s' "$json" | tr -d '\r\n' | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" | head -n 1
+}
+
+require_file() {
+  path="$1"
+  [ -s "$path" ]
+}
+
+check_api_key_permissions() {
+  perm="$(stat -c '%a' "$APIKEY_FILE" 2>/dev/null || true)"
+  uid="$(stat -c '%u' "$APIKEY_FILE" 2>/dev/null || true)"
+
+  if [ -n "$perm" ] && [ -n "$uid" ]; then
+    [ "$perm" = "600" ] || return 1
+    [ "$uid" = "0" ] || return 1
+    return 0
+  fi
+
+  ls_line="$(ls -ln "$APIKEY_FILE" 2>/dev/null || true)"
+  mode="$(printf '%s' "$ls_line" | awk '{print $1}')"
+  owner_uid="$(printf '%s' "$ls_line" | awk '{print $3}')"
+  [ "$mode" = "-rw-------" ] || return 1
+  [ "$owner_uid" = "0" ] || return 1
+}
+
+rate_limit_check() {
+  ip="$1"
+  key="$(printf '%s' "$ip" | tr -c 'A-Za-z0-9._-' '_')"
+  file="/tmp/icxifi_rl_${key}"
+  now="$(date +%s)"
+  start="$now"
+  count=0
+
+  if [ -s "$file" ]; then
+    line="$(cat "$file" 2>/dev/null || true)"
+    old_start="$(printf '%s' "$line" | awk '{print $1}')"
+    old_count="$(printf '%s' "$line" | awk '{print $2}')"
+    if is_uint "$old_start" && is_uint "$old_count"; then
+      if [ $((now - old_start)) -lt "$RL_WINDOW_SECONDS" ]; then
+        start="$old_start"
+        count="$old_count"
+      fi
+    fi
+  fi
+
+  count=$((count + 1))
+  printf '%s %s\n' "$start" "$count" > "$file"
+
+  if [ "$count" -gt "$RL_MAX_REQUESTS" ]; then
+    retry_after=$((RL_WINDOW_SECONDS - (now - start)))
+    if [ "$retry_after" -lt 1 ]; then
+      retry_after=1
+    fi
+    printf '%s' "$retry_after"
+    return 1
+  fi
+
+  return 0
+}
+
+amount=""
+deviceId="vendo-1"
+macHint=""
+
+IFS='&'
+for pair in ${QUERY_STRING:-}; do
+  key="${pair%%=*}"
+  val="${pair#*=}"
+  [ "$key" = "$pair" ] && val=""
+  val="$(urldecode "$val")"
+  case "$key" in
+    amount) amount="$val" ;;
+    deviceId) deviceId="$val" ;;
+    macHint) macHint="$val" ;;
+  esac
+done
+unset IFS
+
+clientIp="${REMOTE_ADDR:-unknown}"
+
+if [ -z "$amount" ] || ! is_uint "$amount"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"amount must be numeric"}'
+  exit 0
+fi
+
+if ! safe_token "$deviceId"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid deviceId"}'
+  exit 0
+fi
+
+if [ -n "$macHint" ] && ! safe_mac "$macHint"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid macHint"}'
+  exit 0
+fi
+
+retry_after=""
+if ! retry_after="$(rate_limit_check "$clientIp")"; then
+  print_status_json 429 "Too Many Requests" "{\"ok\":false,\"error\":\"Rate limit exceeded\",\"retryAfterSeconds\":${retry_after}}"
+  log_debug "esp_rate_limit ip=$clientIp retryAfter=$retry_after"
+  exit 0
+fi
+
+if ! require_file "$BASE_FILE" || ! require_file "$RID_FILE" || ! require_file "$APIKEY_FILE"; then
+  print_status_json 500 "Internal Server Error" '{"ok":false,"error":"Missing router cloud credentials"}'
+  log_debug "esp_credential_missing ip=$clientIp"
+  exit 0
+fi
+
+if ! check_api_key_permissions; then
+  print_status_json 500 "Internal Server Error" '{"ok":false,"error":"Invalid router_api_key permissions"}'
+  log_debug "esp_bad_permissions file=$APIKEY_FILE"
+  exit 0
+fi
+
+BASE="$(tr -d '\r\n' < "$BASE_FILE")"
+RID="$(tr -d '\r\n' < "$RID_FILE")"
+APIKEY="$(tr -d '\r\n' < "$APIKEY_FILE")"
+
+case "$BASE" in
+  http://*|https://*) ;;
+  *)
+    print_status_json 500 "Internal Server Error" '{"ok":false,"error":"Invalid cloud_base_url"}'
+    exit 0
+    ;;
+esac
+
+if [ -n "$macHint" ]; then
+  payload_create="$(printf '{"amount":%s,"deviceId":"%s","clientHint":{"mac":"%s"}}' "$amount" "$deviceId" "$macHint")"
+else
+  payload_create="$(printf '{"amount":%s,"deviceId":"%s"}' "$amount" "$deviceId")"
+fi
+
+resp_create="$(curl -sS --connect-timeout 5 -m 20 -X POST "$BASE/api/router/vouchers/create" \
+  -H "Authorization: Bearer $APIKEY" \
+  -H "X-Router-ID: $RID" \
+  -H "Content-Type: application/json" \
+  -d "$payload_create" 2>/dev/null || true)"
+
+# Phase 5: offline-first fallback - use voucher from local pool
+if [ -z "$resp_create" ] || ! printf '%s' "$resp_create" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+  pool_file="/etc/icxifi/voucher_pool.txt"
+  if [ -s "$pool_file" ]; then
+    line="$(head -n 1 "$pool_file")"
+    code="$(printf '%s' "$line" | cut -d'|' -f1)"
+    mins="$(printf '%s' "$line" | cut -d'|' -f2)"
+    amt="$(printf '%s' "$line" | cut -d'|' -f3)"
+    exp="$(printf '%s' "$line" | cut -d'|' -f4)"
+    if [ -n "$code" ] && safe_code "$code"; then
+      sed -i '1d' "$pool_file"
+      pending="/etc/icxifi/pending_sales.txt"
+      ts="$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')"
+      printf '%s|%s|%s|%s\n' "$deviceId" "${amt:-$amount}" "$code" "$ts" >> "$pending" 2>/dev/null || true
+      log_debug "esp_offline_vend ip=$clientIp deviceId=$deviceId code=$code from_pool"
+      print_json "$(printf '{"ok":true,"code":"%s","minutes":%s,"amount":%s,"expiresAt":"%s","offline":true}' "$code" "${mins:-0}" "${amt:-$amount}" "$exp")"
+      exit 0
+    fi
+  fi
+  if [ -z "$resp_create" ]; then
+    print_status_json 502 "Bad Gateway" '{"ok":false,"error":"Cloud unavailable"}'
+    log_debug "esp_create_failed ip=$clientIp reason=empty_response"
+  else
+    print_json "$resp_create"
+    log_debug "esp_create_rejected ip=$clientIp amount=$amount device=$deviceId"
+  fi
+  exit 0
+fi
+
+code="$(json_get_string code "$resp_create")"
+mins="$(json_get_number minutes "$resp_create")"
+amt="$(json_get_number amount "$resp_create")"
+exp="$(json_get_string expiresAt "$resp_create")"
+
+if [ -z "$code" ] || ! safe_code "$code"; then
+  print_status_json 502 "Bad Gateway" '{"ok":false,"error":"Invalid voucher code from cloud"}'
+  log_debug "esp_bad_code ip=$clientIp amount=$amount device=$deviceId"
+  exit 0
+fi
+
+if [ -z "$mins" ] || ! is_uint "$mins"; then
+  mins=0
+fi
+if [ -z "$amt" ] || ! is_uint "$amt"; then
+  amt="$amount"
+fi
+
+log_debug "esp_vend_ok ip=$clientIp deviceId=$deviceId amount=$amt code=$code"
+
+print_json "$(printf '{"ok":true,"code":"%s","minutes":%s,"amount":%s,"expiresAt":"%s"}' "$code" "$mins" "$amt" "$exp")"

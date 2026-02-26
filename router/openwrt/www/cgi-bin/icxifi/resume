@@ -1,0 +1,213 @@
+#!/bin/sh
+# Resume paused session: re-auth with stored remaining time
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+BASE_FILE="/etc/icxifi/cloud_base_url"
+RID_FILE="/etc/icxifi/router_id"
+APIKEY_FILE="/etc/icxifi/router_api_key"
+
+printf 'Content-Type: application/json\r\n'
+printf 'Cache-Control: no-store\r\n\r\n'
+
+clientIp="${REMOTE_ADDR:-}"
+clientMac=""
+IFS='&'
+for pair in ${QUERY_STRING:-}; do
+  key="${pair%%=*}"
+  val="${pair#*=}"
+  [ "$key" = "$pair" ] && val=""
+  case "$key" in
+    clientMac|clientmac|mac) clientMac="$val" ;;
+    clientIp|clientip) [ -n "$val" ] && clientIp="$val" ;;
+  esac
+done
+unset IFS
+
+if [ -z "$clientIp" ] && [ -z "$clientMac" ]; then
+  printf '{"ok":false,"error":"Unknown client"}\n'
+  exit 0
+fi
+
+if ! command -v ndsctl >/dev/null 2>&1; then
+  printf '{"ok":false,"error":"OpenNDS not available"}\n'
+  exit 0
+fi
+
+if [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ]; then
+  BASE="$(tr -d '\r\n' < "$BASE_FILE" 2>/dev/null || true)"
+  RID="$(tr -d '\r\n' < "$RID_FILE" 2>/dev/null || true)"
+  APIKEY="$(tr -d '\r\n' < "$APIKEY_FILE" 2>/dev/null || true)"
+  if [ -n "$BASE" ] && [ -n "$RID" ] && [ -n "$APIKEY" ]; then
+    PAYLOAD="$(printf '{"client":{"ip":"%s","mac":"%s"}}' "$clientIp" "$clientMac")"
+    RESP="$(curl -sS --connect-timeout 5 -m 12 -X POST "$BASE/api/router/grants/resume" \
+      -H "Authorization: Bearer $APIKEY" \
+      -H "X-Router-ID: $RID" \
+      -H "Content-Type: application/json" \
+      -d "$PAYLOAD" 2>/dev/null || true)"
+    if printf '%s' "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+      remaining="$(printf '%s' "$RESP" | sed -n 's/.*"remainingSeconds"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+      dl_kbps="$(printf '%s' "$RESP" | sed -n 's/.*"downloadKbps"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+      ul_kbps="$(printf '%s' "$RESP" | sed -n 's/.*"uploadKbps"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+      remaining="${remaining:-0}"
+      dl_kbps="${dl_kbps:-10000}"
+      ul_kbps="${ul_kbps:-10000}"
+      minutes_for_auth=$(( (remaining + 59) / 60 ))
+      [ "$minutes_for_auth" -lt 1 ] && minutes_for_auth=1
+      if [ -n "$clientIp" ] && ndsctl auth "$clientIp" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume|cloud" >/dev/null 2>&1; then
+        :
+      elif [ -n "$clientMac" ] && ndsctl auth "$clientMac" >/dev/null 2>&1; then
+        :
+      else
+        printf '{"ok":false,"error":"Resume failed"}\n'
+        exit 0
+      fi
+
+      SESS_DIR="/tmp/icxifi_sessions"
+      mkdir -p "$SESS_DIR"
+      now="$(date +%s)"
+      if [ -n "$clientMac" ]; then
+        sess_key="$(echo "$clientMac" | tr -d ':-' | tr 'a-z' 'A-Z')"
+        [ -n "$sess_key" ] || sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+      else
+        sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+      fi
+      if [ -n "$sess_key" ]; then
+        printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
+          "$now" "$minutes_for_auth" "$dl_kbps" "$ul_kbps" "${clientMac:-}" "${clientIp:-}" \
+          > "$SESS_DIR/${sess_key}" 2>/dev/null || true
+      fi
+
+      printf '{"ok":true,"connected":true,"minutesLeft":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s}\n' \
+        "$((remaining / 60))" "$remaining" "$dl_kbps" "$ul_kbps"
+      exit 0
+    fi
+  fi
+fi
+
+PAUSED_DIR="/tmp/icxifi_paused"
+PAUSED_FILE=""
+# Prefer MAC to find file (IP can change when paused)
+if [ -n "$clientMac" ]; then
+  key="$(echo "$clientMac" | tr -c 'A-Za-z0-9' '_')"
+  [ -f "$PAUSED_DIR/${key}" ] && PAUSED_FILE="$PAUSED_DIR/${key}"
+fi
+if [ -z "$PAUSED_FILE" ]; then
+  key_ip="$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+  [ -f "$PAUSED_DIR/${key_ip}" ] && PAUSED_FILE="$PAUSED_DIR/${key_ip}"
+fi
+if [ -z "$PAUSED_FILE" ]; then
+  for f in "$PAUSED_DIR"/*; do
+    [ -f "$f" ] || continue
+    if grep -q "\"clientIp\":\"$clientIp\"" "$f" 2>/dev/null; then
+      PAUSED_FILE="$f"
+      break
+    fi
+  done
+fi
+
+# If no paused file, check stored sessions (disconnected-with-time resume)
+if [ -z "$PAUSED_FILE" ] || ! [ -s "$PAUSED_FILE" ]; then
+  SESS_DIR="/tmp/icxifi_sessions"
+  SESS_FILE=""
+  if [ -n "$clientMac" ]; then
+    sess_key="$(echo "$clientMac" | tr -d ':-' | tr 'a-z' 'A-Z')"
+    [ -f "$SESS_DIR/${sess_key}" ] && SESS_FILE="$SESS_DIR/${sess_key}"
+  fi
+  if [ -z "$SESS_FILE" ] && [ -n "$clientIp" ]; then
+    key_ip="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+    [ -f "$SESS_DIR/${key_ip}" ] && SESS_FILE="$SESS_DIR/${key_ip}"
+  fi
+  if [ -n "$SESS_FILE" ] && [ -s "$SESS_FILE" ]; then
+    granted_at="$(sed -n 's/.*"grantedAt"[^0-9]*\([0-9]*\).*/\1/p' "$SESS_FILE" | head -n 1)"
+    mins_granted="$(sed -n 's/.*"minutesGranted"[^0-9]*\([0-9]*\).*/\1/p' "$SESS_FILE" | head -n 1)"
+    dl_kbps="$(sed -n 's/.*"downloadKbps"[^0-9]*\([0-9]*\).*/\1/p' "$SESS_FILE" | head -n 1)"
+    ul_kbps="$(sed -n 's/.*"uploadKbps"[^0-9]*\([0-9]*\).*/\1/p' "$SESS_FILE" | head -n 1)"
+    now="$(date +%s)"
+    elapsed_secs=$((now - granted_at))
+    remaining_secs=$((mins_granted * 60 - elapsed_secs))
+    remaining_secs="${remaining_secs:-0}"
+    [ "$remaining_secs" -lt 0 ] && remaining_secs=0
+    mins_for_auth=$(( (remaining_secs + 59) / 60 ))
+    [ "$mins_for_auth" -lt 1 ] && mins_for_auth=1
+    dl_kbps="${dl_kbps:-10000}"
+    ul_kbps="${ul_kbps:-10000}"
+    auth_ok=0
+    if [ -n "$clientIp" ] && ndsctl auth "$clientIp" "$mins_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume" >/dev/null 2>&1; then
+      auth_ok=1
+    elif [ -n "$clientMac" ] && ndsctl auth "$clientMac" >/dev/null 2>&1; then
+      auth_ok=1
+    fi
+    if [ "$auth_ok" = "1" ]; then
+      # Update session file so session CGI shows correct remaining (no cap drift)
+      client_mac_s="$(sed -n 's/.*"clientMac"[^"]*"\([^"]*\)".*/\1/p' "$SESS_FILE" | head -n 1)"
+      client_ip_s="$(sed -n 's/.*"clientIp"[^"]*"\([^"]*\)".*/\1/p' "$SESS_FILE" | head -n 1)"
+      client_ip_s="${client_ip_s:-$clientIp}"
+      if [ -n "$client_mac_s" ]; then
+        sk="$(echo "$client_mac_s" | tr -d ':-' | tr 'a-z' 'A-Z')"
+        [ -n "$sk" ] || sk="ip_$(echo "$client_ip_s" | tr -c 'A-Za-z0-9' '_')"
+      else
+        sk="ip_$(echo "$client_ip_s" | tr -c 'A-Za-z0-9' '_')"
+      fi
+      if [ -n "$sk" ]; then
+        printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
+          "$now" "$mins_for_auth" "$dl_kbps" "$ul_kbps" "${client_mac_s:-}" "$client_ip_s" \
+          > "$SESS_DIR/${sk}" 2>/dev/null || true
+      fi
+      printf '{"ok":true,"connected":true,"minutesLeft":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s}\n' \
+        "$((remaining_secs / 60))" "$remaining_secs" "$dl_kbps" "$ul_kbps"
+      exit 0
+    fi
+  fi
+  printf '{"ok":false,"error":"No paused session found"}\n'
+  exit 0
+fi
+
+# Parse paused file (minimal JSON) - use exact seconds
+remaining="$(sed -n 's/.*"remainingSeconds"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$PAUSED_FILE" | head -n 1)"
+dl_kbps="$(sed -n 's/.*"downloadKbps"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$PAUSED_FILE" | head -n 1)"
+ul_kbps="$(sed -n 's/.*"uploadKbps"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$PAUSED_FILE" | head -n 1)"
+client_mac="$(sed -n 's/.*"clientMac"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PAUSED_FILE" | head -n 1)"
+
+remaining="${remaining:-0}"
+dl_kbps="${dl_kbps:-10000}"
+ul_kbps="${ul_kbps:-10000}"
+minutes_for_auth=$(( (remaining + 59) / 60 ))
+[ "$minutes_for_auth" -lt 1 ] && minutes_for_auth=1
+
+# Re-auth - try IP first with full ndsctl params (ndsctl uses minutes; round up to preserve seconds)
+auth_target="$clientIp"
+if ndsctl auth "$auth_target" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume" >/dev/null 2>&1; then
+  :
+elif [ -n "$client_mac" ] && ndsctl auth "$client_mac" >/dev/null 2>&1; then
+  :
+else
+  printf '{"ok":false,"error":"Resume failed"}\n'
+  exit 0
+fi
+
+# Update icxifi_sessions so session CGI returns correct remaining time (frozen at pause).
+# Old session had grantedAt from original connect; cap logic would show elapsed time during pause.
+# Now: grantedAt=now, minutesGranted=minutes_for_auth so stored_secs matches OpenNDS.
+SESS_DIR="/tmp/icxifi_sessions"
+mkdir -p "$SESS_DIR"
+now="$(date +%s)"
+client_ip="$(sed -n 's/.*"clientIp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$PAUSED_FILE" | head -n 1)"
+client_ip="${client_ip:-$clientIp}"
+if [ -n "$client_mac" ]; then
+  sess_key="$(echo "$client_mac" | tr -d ':-' | tr 'a-z' 'A-Z')"
+  [ -n "$sess_key" ] || sess_key="ip_$(echo "$client_ip" | tr -c 'A-Za-z0-9' '_')"
+else
+  sess_key="ip_$(echo "$client_ip" | tr -c 'A-Za-z0-9' '_')"
+fi
+if [ -n "$sess_key" ]; then
+  printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
+    "$now" "$minutes_for_auth" "$dl_kbps" "$ul_kbps" "${client_mac:-}" "$client_ip" \
+    > "$SESS_DIR/${sess_key}" 2>/dev/null || true
+fi
+
+rm -f "$PAUSED_FILE"
+
+printf '{"ok":true,"connected":true,"minutesLeft":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s}\n' \
+  "$((remaining / 60))" "$remaining" "$dl_kbps" "$ul_kbps"
+exit 0

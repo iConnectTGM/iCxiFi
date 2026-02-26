@@ -1,0 +1,300 @@
+#!/bin/sh
+
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+LOG_FILE="/tmp/icxifi_auth_debug.log"
+LOG_MAX_BYTES=262144
+RL_WINDOW_SECONDS=10
+RL_MAX_REQUESTS="${ICXIFI_RL_MAX_REQUESTS:-8}"
+
+BASE_FILE="/etc/icxifi/cloud_base_url"
+RID_FILE="/etc/icxifi/router_id"
+APIKEY_FILE="/etc/icxifi/router_api_key"
+PROFILE_FILE="/etc/icxifi/profile_cache.json"
+SPEED_FACTOR_FILE="/etc/icxifi/speed_factor_percent"
+
+print_json() {
+  printf 'Content-Type: application/json\r\n\r\n%s\n' "$1"
+}
+
+print_status_json() {
+  code="$1"
+  reason="$2"
+  body="$3"
+  printf 'Status: %s %s\r\nContent-Type: application/json\r\n\r\n%s\n' "$code" "$reason" "$body"
+}
+
+rotate_log() {
+  if [ -f "$LOG_FILE" ]; then
+    size="$(wc -c < "$LOG_FILE" 2>/dev/null || echo 0)"
+    case "$size" in
+      ''|*[!0-9]*) size=0 ;;
+    esac
+    if [ "$size" -gt "$LOG_MAX_BYTES" ]; then
+      mv -f "$LOG_FILE" "${LOG_FILE}.1" 2>/dev/null || true
+      : > "$LOG_FILE"
+    fi
+  fi
+}
+
+log_debug() {
+  rotate_log
+  ts="$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date)"
+  printf '%s %s\n' "$ts" "$*" >> "$LOG_FILE"
+}
+
+urldecode() {
+  value="${1//+/ }"
+  printf '%b' "${value//%/\\x}"
+}
+
+is_uint() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+read_legacy_speed_factor() {
+  factor=100
+  if [ -s "$SPEED_FACTOR_FILE" ]; then
+    raw="$(tr -d '\r\n' < "$SPEED_FACTOR_FILE" 2>/dev/null || true)"
+    if is_uint "$raw" && [ "$raw" -ge 50 ] && [ "$raw" -le 150 ]; then
+      factor="$raw"
+    fi
+  fi
+  printf '%s' "$factor"
+}
+
+read_profile_speed_factor() {
+  key="$1"
+  fallback="$2"
+  out=""
+
+  if [ -s "$PROFILE_FILE" ] && command -v jsonfilter >/dev/null 2>&1; then
+    out="$(jsonfilter -i "$PROFILE_FILE" -e "@.profile.speedCalibration.${key}" 2>/dev/null | head -n 1 || true)"
+  fi
+
+  if ! is_uint "$out" || [ "$out" -lt 50 ] || [ "$out" -gt 150 ]; then
+    out="$fallback"
+  fi
+  printf '%s' "$out"
+}
+
+apply_speed_factor() {
+  kbps="$1"
+  factor="$2"
+  if ! is_uint "$kbps"; then
+    kbps=0
+  fi
+  if ! is_uint "$factor"; then
+    factor=100
+  fi
+  if [ "$kbps" -le 0 ]; then
+    printf '0'
+    return 0
+  fi
+  adjusted=$((kbps * factor / 100))
+  if [ "$adjusted" -lt 1 ]; then
+    adjusted=1
+  fi
+  printf '%s' "$adjusted"
+}
+
+safe_code() {
+  # Backward compatible:
+  # - legacy: ICXF-XXXXXXXX
+  # - current: XXXXXXXXX (alphanumeric only)
+  printf '%s' "$1" | grep -Eq '^(ICXF-)?[A-Z0-9]{4,32}$'
+}
+
+safe_mac() {
+  case "$1" in
+    ''|*[!A-Fa-f0-9:-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+require_file() {
+  [ -s "$1" ]
+}
+
+check_api_key_permissions() {
+  perm="$(stat -c '%a' "$APIKEY_FILE" 2>/dev/null || true)"
+  uid="$(stat -c '%u' "$APIKEY_FILE" 2>/dev/null || true)"
+  if [ -n "$perm" ] && [ -n "$uid" ]; then
+    [ "$perm" = "600" ] || return 1
+    [ "$uid" = "0" ] || return 1
+    return 0
+  fi
+  ls_line="$(ls -ln "$APIKEY_FILE" 2>/dev/null || true)"
+  mode="$(printf '%s' "$ls_line" | awk '{print $1}')"
+  owner_uid="$(printf '%s' "$ls_line" | awk '{print $3}')"
+  [ "$mode" = "-rw-------" ] || return 1
+  [ "$owner_uid" = "0" ] || return 1
+}
+
+rate_limit_check() {
+  ip="$1"
+  key="$(printf '%s' "$ip" | tr -c 'A-Za-z0-9._-' '_')"
+  file="/tmp/icxifi_rl_${key}"
+  now="$(date +%s)"
+  start="$now"
+  count=0
+
+  if [ -s "$file" ]; then
+    line="$(cat "$file" 2>/dev/null || true)"
+    old_start="$(printf '%s' "$line" | awk '{print $1}')"
+    old_count="$(printf '%s' "$line" | awk '{print $2}')"
+    if is_uint "$old_start" && is_uint "$old_count"; then
+      if [ $((now - old_start)) -lt "$RL_WINDOW_SECONDS" ]; then
+        start="$old_start"
+        count="$old_count"
+      fi
+    fi
+  fi
+
+  count=$((count + 1))
+  printf '%s %s\n' "$start" "$count" > "$file"
+
+  if [ "$count" -gt "$RL_MAX_REQUESTS" ]; then
+    retry_after=$((RL_WINDOW_SECONDS - (now - start)))
+    if [ "$retry_after" -lt 1 ]; then retry_after=1; fi
+    printf '%s' "$retry_after"
+    return 1
+  fi
+  return 0
+}
+
+code=""
+clientMac=""
+clientIp="${REMOTE_ADDR:-}"
+
+IFS='&'
+for pair in ${QUERY_STRING:-}; do
+  key="${pair%%=*}"
+  val="${pair#*=}"
+  [ "$key" = "$pair" ] && val=""
+  val="$(urldecode "$val")"
+  case "$key" in
+    code) code="$val" ;;
+    clientMac|macHint) clientMac="$val" ;;
+    clientIp|clientip) [ -n "$val" ] && clientIp="$val" ;;
+  esac
+done
+unset IFS
+
+code="$(printf '%s' "$code" | tr 'a-z' 'A-Z' | tr -d ' \t\r\n')"
+
+if [ -z "$code" ] || ! safe_code "$code"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid voucher code"}'
+  exit 0
+fi
+
+if [ -n "$clientMac" ] && ! safe_mac "$clientMac"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid client MAC"}'
+  exit 0
+fi
+
+if ! require_file "$BASE_FILE" || ! require_file "$RID_FILE" || ! require_file "$APIKEY_FILE"; then
+  print_status_json 500 "Internal Server Error" '{"ok":false,"error":"Missing router cloud credentials"}'
+  exit 0
+fi
+
+if ! check_api_key_permissions; then
+  print_status_json 500 "Internal Server Error" '{"ok":false,"error":"Router API key has insecure permissions"}'
+  exit 0
+fi
+
+if [ -n "$clientIp" ]; then
+  retry="$(rate_limit_check "$clientIp")"
+  if [ $? -ne 0 ]; then
+    print_status_json 429 "Too Many Requests" "$(printf '{"ok":false,"error":"Rate limit exceeded","retryAfterSecs":%s}' "$retry")"
+    exit 0
+  fi
+fi
+
+BASE="$(tr -d '\r\n' < "$BASE_FILE" 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < "$RID_FILE" 2>/dev/null || true)"
+APIKEY="$(tr -d '\r\n' < "$APIKEY_FILE" 2>/dev/null || true)"
+
+PAYLOAD="$(printf '{"code":"%s","client":{"ip":"%s","mac":"%s"}}' "$code" "$clientIp" "$clientMac")"
+
+RESP="$(curl -sS -m 20 -X POST "$BASE/api/router/vouchers/redeem" \
+  -H "Authorization: Bearer $APIKEY" \
+  -H "X-Router-ID: $RID" \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD" 2>/dev/null || true)"
+
+if [ -z "$RESP" ]; then
+  print_status_json 502 "Bad Gateway" '{"ok":false,"error":"Cloud unavailable"}'
+  exit 0
+fi
+
+if printf '%s' "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+  log_debug "redeem_ok ip=$clientIp mac=$clientMac code=$code"
+
+  # Grant OpenNDS access (ndsctl auth) - need at least IP or MAC
+  if command -v ndsctl >/dev/null 2>&1 && { [ -n "$clientIp" ] || [ -n "$clientMac" ]; }; then
+    grant_mins="$(printf '%s' "$RESP" | sed -n 's/.*"minutes"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -n 1)"
+    grant_dl="$(printf '%s' "$RESP" | sed -n 's/.*"downloadKbps"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -n 1)"
+    grant_ul="$(printf '%s' "$RESP" | sed -n 's/.*"uploadKbps"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -n 1)"
+    grant_dlq="$(printf '%s' "$RESP" | sed -n 's/.*"downloadQuotaKB"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -n 1)"
+    grant_ulq="$(printf '%s' "$RESP" | sed -n 's/.*"uploadQuotaKB"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -n 1)"
+    grant_mins="${grant_mins:-35}"
+    grant_dl="${grant_dl:-10000}"
+    grant_ul="${grant_ul:-10000}"
+    grant_dlq="${grant_dlq:-0}"
+    grant_ulq="${grant_ulq:-0}"
+
+    # Optional calibration to make real-world speed limits closer to target.
+    # Profile values (preferred): .profile.speedCalibration.downloadPercent / uploadPercent
+    # Legacy fallback: /etc/icxifi/speed_factor_percent (single factor)
+    legacy_speed_factor="$(read_legacy_speed_factor)"
+    speed_factor_dl="$(read_profile_speed_factor downloadPercent "$legacy_speed_factor")"
+    speed_factor_ul="$(read_profile_speed_factor uploadPercent "$legacy_speed_factor")"
+    grant_dl="$(apply_speed_factor "$grant_dl" "$speed_factor_dl")"
+    grant_ul="$(apply_speed_factor "$grant_ul" "$speed_factor_ul")"
+
+    # Try IP first (with extended params); fallback to MAC-only if IP fails
+    nds_out=""
+    if [ -n "$clientIp" ] && nds_out="$(ndsctl auth "$clientIp" "$grant_mins" "$grant_ul" "$grant_dl" "$grant_ulq" "$grant_dlq" "icxifi|redeem|code=$code" 2>&1)"; then
+      log_debug "ndsctl_auth_ok ip=$clientIp"
+    elif [ -n "$clientMac" ]; then
+      if nds_out="$(ndsctl auth "$clientMac" 2>&1)"; then
+        log_debug "ndsctl_auth_ok mac=$clientMac"
+      else
+        auth_out="$(printf '%s' "${nds_out:-}" | tr '\n' ' ' | cut -c1-200)"
+        log_debug "ndsctl_auth_fail mac=$clientMac nds=$auth_out"
+      fi
+    else
+      auth_out="$(printf '%s' "${nds_out:-}" | tr '\n' ' ' | cut -c1-200)"
+      log_debug "ndsctl_auth_fail ip=$clientIp nds=$auth_out"
+    fi
+
+    # Store session by MAC so user can "Continue" if they disconnect and return
+    if [ -n "$clientMac" ] || [ -n "$clientIp" ]; then
+      SESS_DIR="/tmp/icxifi_sessions"
+      mkdir -p "$SESS_DIR"
+      now_epoch="$(date +%s)"
+      if [ -n "$clientMac" ]; then
+        sess_key="$(echo "$clientMac" | tr -d ':-' | tr 'a-z' 'A-Z')"
+        [ -n "$sess_key" ] || sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+      else
+        sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+      fi
+      if [ -n "$sess_key" ]; then
+        printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
+          "$now_epoch" "$grant_mins" "$grant_dl" "$grant_ul" "${clientMac:-}" "${clientIp:-}" \
+          > "$SESS_DIR/${sess_key}" 2>/dev/null || true
+      fi
+    fi
+  fi
+else
+  # Log failed redeem for debugging (e.g. already_redeemed, invalid_code)
+  err_msg="$(printf '%s' "$RESP" | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  log_debug "redeem_fail ip=$clientIp code=$code err=$err_msg"
+fi
+
+print_json "$RESP"

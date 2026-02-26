@@ -1,0 +1,222 @@
+#!/bin/sh
+# Session status from OpenNDS - for portal CONNECTED + timer
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+BASE_FILE="/etc/icxifi/cloud_base_url"
+RID_FILE="/etc/icxifi/router_id"
+APIKEY_FILE="/etc/icxifi/router_api_key"
+
+printf 'Content-Type: application/json; charset=utf-8\r\n'
+printf 'Cache-Control: no-store\r\n\r\n'
+
+clientIp="${REMOTE_ADDR:-}"
+clientMac=""
+if [ -n "$QUERY_STRING" ]; then
+  qs_clientIp=$(echo "$QUERY_STRING" | sed -n 's/.*[cC]lient[Ii]p=\([^&]*\).*/\1/p')
+  [ -n "$qs_clientIp" ] && clientIp="$qs_clientIp"
+  clientMac=$(echo "$QUERY_STRING" | sed -n 's/.*[cC]lient[Mm]ac=\([^&]*\).*/\1/p')
+fi
+
+# Fallback: resolve MAC from ARP table when we have IP but no MAC (works for any client on LAN)
+resolve_mac_from_arp() {
+  [ -n "$1" ] || return
+  _ip="$1"
+  _mac=""
+  if [ -f /proc/net/arp ]; then
+    _line=$(grep -E "^${_ip}[[:space:]]" /proc/net/arp 2>/dev/null | head -1)
+    if [ -n "$_line" ]; then
+      _mac=$(echo "$_line" | awk '{print $4}')
+      case "$_mac" in
+        00:00:00:00:00:00|0x0|"") _mac="" ;;
+      esac
+    fi
+  fi
+  if [ -z "$_mac" ] && command -v ip >/dev/null 2>&1; then
+    _mac=$(ip neigh show 2>/dev/null | grep -E "^${_ip}[[:space:]]" | awk '{print $5}' | head -1)
+  fi
+  [ -n "$_mac" ] && printf '%s' "$_mac"
+}
+[ -z "$clientMac" ] && [ -n "$clientIp" ] && clientMac="$(resolve_mac_from_arp "$clientIp")"
+
+if [ -z "$clientIp" ]; then
+  printf '{"ok":true,"connected":false}\n'
+  exit 0
+fi
+
+if [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ]; then
+  BASE="$(tr -d '\r\n' < "$BASE_FILE" 2>/dev/null || true)"
+  RID="$(tr -d '\r\n' < "$RID_FILE" 2>/dev/null || true)"
+  APIKEY="$(tr -d '\r\n' < "$APIKEY_FILE" 2>/dev/null || true)"
+  if [ -n "$BASE" ] && [ -n "$RID" ] && [ -n "$APIKEY" ]; then
+    PAYLOAD="$(printf '{"client":{"ip":"%s","mac":"%s"}}' "$clientIp" "$clientMac")"
+    RESP="$(curl -sS --connect-timeout 4 -m 8 -X POST "$BASE/api/router/grants/state" \
+      -H "Authorization: Bearer $APIKEY" \
+      -H "X-Router-ID: $RID" \
+      -H "Content-Type: application/json" \
+      -d "$PAYLOAD" 2>/dev/null || true)"
+    if printf '%s' "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+      rem_secs="$(printf '%s' "$RESP" | sed -n 's/.*"remainingSeconds"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+      rem_secs="${rem_secs:-0}"
+      if printf '%s' "$RESP" | grep -q '"connected"[[:space:]]*:[[:space:]]*true' \
+        || printf '%s' "$RESP" | grep -q '"paused"[[:space:]]*:[[:space:]]*true' \
+        || printf '%s' "$RESP" | grep -q '"disconnectedWithTime"[[:space:]]*:[[:space:]]*true' \
+        || [ "$rem_secs" -gt 0 ]; then
+        printf '%s\n' "$RESP"
+        exit 0
+      fi
+    fi
+  fi
+fi
+
+if ! command -v ndsctl >/dev/null 2>&1; then
+  mac_extra=""
+  [ -n "$clientMac" ] && mac_extra=",\"clientMac\":\"$clientMac\""
+  printf '{"ok":true,"connected":false,"clientIp":"%s"%s}\n' "$clientIp" "$mac_extra"
+  exit 0
+fi
+
+nds_json="$(ndsctl json "$clientIp" 2>/dev/null)"
+if [ -z "$nds_json" ]; then
+  nds_json=""
+fi
+
+if [ -z "$nds_json" ] || ! echo "$nds_json" | grep -q '"state".*"Authenticated"'; then
+  PAUSED_DIR="/tmp/icxifi_paused"
+  pf=""
+  # 1) Prefer client MAC from query (pause stores by MAC for stability)
+  if [ -n "$clientMac" ]; then
+    key_mac="$(echo "$clientMac" | tr -c 'A-Za-z0-9' '_')"
+    [ -f "$PAUSED_DIR/${key_mac}" ] && pf="$PAUSED_DIR/${key_mac}"
+  fi
+  # 2) Fallback to IP-keyed file
+  if [ -z "$pf" ]; then
+    key_ip="$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+    [ -f "$PAUSED_DIR/${key_ip}" ] && pf="$PAUSED_DIR/${key_ip}"
+  fi
+  # 3) Last fallback: scan paused files for matching clientIp (helps refresh when MAC hint missing)
+  if [ -z "$pf" ] && [ -d "$PAUSED_DIR" ]; then
+    for f in "$PAUSED_DIR"/*; do
+      [ -f "$f" ] || continue
+      if grep -q "\"clientIp\":\"$clientIp\"" "$f" 2>/dev/null; then
+        pf="$f"
+        break
+      fi
+    done
+  fi
+  if [ -n "$pf" ] && [ -s "$pf" ]; then
+    remaining="$(sed -n 's/.*"remainingSeconds"[^0-9]*\([0-9]*\).*/\1/p' "$pf" | head -1)"
+    remaining="${remaining:-0}"
+    mins=$((remaining / 60))
+    dl="$(sed -n 's/.*"downloadKbps"[^0-9]*\([0-9]*\).*/\1/p' "$pf" | head -1)"
+    ul="$(sed -n 's/.*"uploadKbps"[^0-9]*\([0-9]*\).*/\1/p' "$pf" | head -1)"
+    dl="${dl:-10000}"
+    ul="${ul:-10000}"
+    paused_mac="$(sed -n 's/.*"clientMac"[^"]*"\([^"]*\)".*/\1/p' "$pf" | head -1)"
+    mac_extra=""
+    [ -n "$paused_mac" ] && mac_extra=",\"clientMac\":\"$paused_mac\""
+    printf '{"ok":true,"connected":false,"paused":true,"minutesLeft":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s,"clientIp":"%s"%s}\n' \
+      "$mins" "$remaining" "$dl" "$ul" "$clientIp" "$mac_extra"
+    exit 0
+  fi
+
+  # Check stored sessions (disconnected but has remaining time - can "Continue" to resume)
+  SESS_DIR="/tmp/icxifi_sessions"
+  if [ -d "$SESS_DIR" ]; then
+    sess_file=""
+    if [ -n "$clientMac" ]; then
+      sess_key="$(echo "$clientMac" | tr -d ':-' | tr 'a-z' 'A-Z')"
+      [ -f "$SESS_DIR/${sess_key}" ] && sess_file="$SESS_DIR/${sess_key}"
+    fi
+    if [ -z "$sess_file" ] && [ -n "$clientIp" ]; then
+      key_ip="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+      [ -f "$SESS_DIR/${key_ip}" ] && sess_file="$SESS_DIR/${key_ip}"
+    fi
+    if [ -n "$sess_file" ] && [ -s "$sess_file" ]; then
+      granted_at="$(sed -n 's/.*"grantedAt"[^0-9]*\([0-9]*\).*/\1/p' "$sess_file" | head -1)"
+      mins_granted="$(sed -n 's/.*"minutesGranted"[^0-9]*\([0-9]*\).*/\1/p' "$sess_file" | head -1)"
+      dl_s="$(sed -n 's/.*"downloadKbps"[^0-9]*\([0-9]*\).*/\1/p' "$sess_file" | head -1)"
+      ul_s="$(sed -n 's/.*"uploadKbps"[^0-9]*\([0-9]*\).*/\1/p' "$sess_file" | head -1)"
+      now="$(date +%s)"
+      elapsed_secs=$((now - granted_at))
+      remaining_secs=$((mins_granted * 60 - elapsed_secs))
+      remaining_secs="${remaining_secs:-0}"
+      [ "$remaining_secs" -lt 0 ] && remaining_secs=0
+      remaining_mins=$((remaining_secs / 60))
+      dl_s="${dl_s:-10000}"
+      ul_s="${ul_s:-10000}"
+      if [ "$remaining_secs" -gt 0 ]; then
+        client_mac_s="$(sed -n 's/.*"clientMac"[^"]*"\([^"]*\)".*/\1/p' "$sess_file" | head -1)"
+        mac_extra=""
+        [ -n "$client_mac_s" ] && mac_extra=",\"clientMac\":\"$client_mac_s\""
+        printf '{"ok":true,"connected":false,"disconnectedWithTime":true,"minutesLeft":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s,"clientIp":"%s"%s}\n' \
+          "$remaining_mins" "$remaining_secs" "$dl_s" "$ul_s" "$clientIp" "$mac_extra"
+        exit 0
+      fi
+    fi
+  fi
+
+  mac_extra=""
+  [ -n "$clientMac" ] && mac_extra=",\"clientMac\":\"$clientMac\""
+  printf '{"ok":true,"connected":false,"clientIp":"%s"%s}\n' "$clientIp" "$mac_extra"
+  exit 0
+fi
+
+session_end="$(echo "$nds_json" | sed -n 's/.*"session_end"[^"]*"\([0-9]*\)".*/\1/p' | head -1)"
+session_end_num="$(echo "$nds_json" | sed -n 's/.*"session_end"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+[ -z "$session_end" ] && session_end="$session_end_num"
+now="$(date +%s)"
+seconds_left=0
+if [ -n "$session_end" ] && [ "$session_end" != "null" ]; then
+  case "$session_end" in ''|*[!0-9]*) ;; *)
+    seconds_left=$((session_end - now))
+    [ "$seconds_left" -lt 0 ] && seconds_left=0
+  ;; esac
+fi
+
+# Cap at our stored grant (OpenNDS may use 24hr default; voucher time is authoritative)
+nds_minutes=$((seconds_left / 60))
+cap_minutes="$nds_minutes"
+cap_seconds=""
+client_mac_json="$(echo "$nds_json" | sed -n 's/.*"mac"[^"]*"\([^"]*\)".*/\1/p' | head -1)"
+mac_for_sess="${clientMac:-$client_mac_json}"
+SESS_DIR="/tmp/icxifi_sessions"
+if [ -d "$SESS_DIR" ]; then
+  sf=""
+  if [ -n "$mac_for_sess" ]; then
+    k="$(echo "$mac_for_sess" | tr -d ':-' | tr 'a-z' 'A-Z')"
+    [ -s "$SESS_DIR/${k}" ] && sf="$SESS_DIR/${k}"
+  fi
+  [ -z "$sf" ] && [ -n "$clientIp" ] && [ -s "$SESS_DIR/ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')" ] && sf="$SESS_DIR/ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+  if [ -n "$sf" ] && [ -s "$sf" ]; then
+    granted_at="$(sed -n 's/.*"grantedAt"[^0-9]*\([0-9]*\).*/\1/p' "$sf" | head -1)"
+    mins_granted="$(sed -n 's/.*"minutesGranted"[^0-9]*\([0-9]*\).*/\1/p' "$sf" | head -1)"
+    if [ -n "$granted_at" ] && [ -n "$mins_granted" ]; then
+      elapsed_secs=$((now - granted_at))
+      stored_secs=$((mins_granted * 60 - elapsed_secs))
+      [ "$stored_secs" -lt 0 ] && stored_secs=0
+      stored_mins=$((stored_secs / 60))
+      if [ "$stored_secs" -lt "$seconds_left" ]; then
+        cap_minutes="$stored_mins"
+        cap_seconds="$stored_secs"
+      fi
+    fi
+  fi
+fi
+minutes_left="${cap_minutes:-$nds_minutes}"
+if [ -n "$cap_seconds" ]; then
+  remaining_secs_conn="$cap_seconds"
+else
+  remaining_secs_conn="$seconds_left"
+fi
+
+dl_kbps="$(echo "$nds_json" | sed -n 's/.*"download_rate_limit_threshold"[^"]*"\([0-9]*\)".*/\1/p' | head -1)"
+ul_kbps="$(echo "$nds_json" | sed -n 's/.*"upload_rate_limit_threshold"[^"]*"\([0-9]*\)".*/\1/p' | head -1)"
+client_mac="$client_mac_json"
+
+dl_kbps="${dl_kbps:-10000}"
+ul_kbps="${ul_kbps:-10000}"
+mac_extra=""
+[ -n "$client_mac" ] && mac_extra=",\"clientMac\":\"$client_mac\""
+
+printf '{"ok":true,"connected":true,"minutesLeft":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s,"clientIp":"%s"%s}\n' \
+  "$minutes_left" "$remaining_secs_conn" "$dl_kbps" "$ul_kbps" "$clientIp" "$mac_extra"

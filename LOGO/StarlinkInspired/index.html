@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iCxiFi | Router Activation</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Rajdhani:wght@500;600;700&display=swap");
+
+:root {
+  --bg: #030407;
+  --bg2: #090b10;
+  --panel: #10141a;
+  --panel2: #0c1015;
+  --line: rgba(255, 255, 255, 0.18);
+  --line-strong: rgba(190, 220, 255, 0.34);
+  --text: #f3f7fb;
+  --muted: #a3aebc;
+  --title: #f6f9fd;
+  --blue: #8fcfff;
+  --green: #8fd6b4;
+  --danger: #ff9a9a;
+  --ok: #a7ecc8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "Rajdhani", "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 700px at 85% 0%, rgba(180, 210, 255, 0.14), rgba(0, 0, 0, 0) 55%),
+    radial-gradient(900px 600px at 10% 100%, rgba(160, 200, 255, 0.08), rgba(0, 0, 0, 0) 60%),
+    linear-gradient(165deg, #06080c 0%, #04060a 55%, #030407 100%);
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 2vw, 24px);
+}
+
+.page {
+  width: clamp(320px, 92vw, 560px);
+  margin: 0 auto;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.2)),
+    linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  padding: clamp(14px, 2.6vw, 22px);
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, rgba(225, 235, 248, 0.08), rgba(143, 207, 255, 0.08) 52%, rgba(255, 255, 255, 0.02));
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.brand {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  position: relative;
+}
+
+.brand-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand img {
+  width: min(260px, 78vw);
+  max-width: 100%;
+  height: auto;
+  opacity: 0.96;
+  border-radius: 14px;
+}
+
+.node-pill {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f8fd;
+  padding: 6px 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+h1 {
+  margin: 0;
+  font-family: "Orbitron", "Rajdhani", sans-serif;
+  color: var(--title);
+  font-size: clamp(24px, 4vw, 30px);
+  letter-spacing: 0.5px;
+}
+
+.subtitle {
+  margin: 6px 0 16px;
+  color: var(--muted);
+  font-size: 19px;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.metric {
+  border: 1px solid var(--line);
+  background: rgba(9, 13, 20, 0.62);
+  border-radius: 12px;
+  padding: 11px 12px;
+}
+
+.metric-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 16px;
+  margin-bottom: 7px;
+}
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(155, 170, 188, 0.26);
+  overflow: hidden;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.fill.blue {
+  background: linear-gradient(90deg, #8fcfff, #d9ecff);
+}
+
+.fill.green {
+  background: linear-gradient(90deg, #8fd6b4, #c8f0de);
+}
+
+.code-box {
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.32)),
+    rgba(6, 11, 18, 0.84);
+  padding: 14px;
+}
+
+.label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.code {
+  font-family: "Orbitron", "Rajdhani", sans-serif;
+  font-size: clamp(24px, 5.2vw, 32px);
+  color: #eef6ff;
+  text-shadow: 0 0 14px rgba(185, 220, 255, 0.25);
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+}
+
+.meta {
+  color: var(--muted);
+  margin: 0;
+  font-size: 17px;
+}
+
+.form-grid {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.field {
+  color: #d4dde8;
+  font-size: 18px;
+  font-weight: 600;
+  width: 100%;
+  text-align: center;
+}
+
+.inp {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(4, 8, 14, 0.86);
+  color: var(--text);
+  outline: none;
+  font: inherit;
+  font-size: 19px;
+}
+
+.inp:focus {
+  border-color: rgba(200, 225, 255, 0.65);
+  box-shadow: 0 0 0 3px rgba(160, 198, 239, 0.18);
+}
+
+.actions {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.btn {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 19px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover {
+  filter: brightness(1.04);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn.primary {
+  color: #071018;
+  background: linear-gradient(180deg, #f6f9fc 0%, #dfe7ef 100%);
+  box-shadow: 0 12px 24px rgba(220, 232, 245, 0.18);
+}
+
+.btn.secondary {
+  color: #e6eef8;
+  border-color: rgba(180, 210, 245, 0.34);
+  background: linear-gradient(180deg, rgba(160, 195, 235, 0.2), rgba(9, 20, 36, 0.4));
+}
+
+.btn.ghost {
+  color: #d9e3ef;
+  border-color: var(--line);
+  background: rgba(10, 18, 30, 0.7);
+}
+
+.status {
+  margin: 14px 0 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(8, 15, 25, 0.8);
+  padding: 10px 12px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.status-muted {
+  color: var(--muted);
+}
+
+.status-ok {
+  color: var(--ok);
+  border-color: rgba(167, 236, 200, 0.42);
+}
+
+.status-bad {
+  color: var(--danger);
+  border-color: rgba(255, 154, 154, 0.42);
+}
+
+@media (min-width: 660px) {
+  .metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand {
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .node-pill {
+    position: static;
+    transform: none;
+  }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <section class="panel">
+    <header class="brand">
+      <div class="brand-main">
+        <img src="./logo.png" alt="iCxiFi" />
+      </div>
+      <div class="node-pill">Router Link</div>
+    </header>
+
+    <h1>Router Activation</h1>
+    <p class="subtitle">Bind this router in your iCxiFi Cloud.</p>
+
+    <div class="metrics" aria-hidden="true">
+      <article class="metric">
+        <div class="metric-head">
+          <span>Cloud Link</span>
+          <span>72%</span>
+        </div>
+        <div class="bar"><span class="fill blue" style="width:72%"></span></div>
+      </article>
+      <article class="metric">
+        <div class="metric-head">
+          <span>Service Health</span>
+          <span>48%</span>
+        </div>
+        <div class="bar"><span class="fill green" style="width:48%"></span></div>
+      </article>
+    </div>
+
+    <section class="code-box" aria-label="Bind details">
+      <p class="label">Bind Code</p>
+      <div class="code" id="code">NONE</div>
+      <p class="meta" id="meta">Router ID: ...</p>
+    </section>
+
+    <div class="form-grid">
+      <label class="field" for="routerName">Router Name</label>
+      <input class="inp" id="routerName" placeholder="e.g. Tagum Branch 1" autocomplete="organization" />
+
+      <label class="field" for="licenseKey">License Key</label>
+      <input class="inp" id="licenseKey" placeholder="e.g. LIC-STARTER-0001" autocomplete="off" />
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="activate" type="button">Activate Router</button>
+      <button class="btn secondary" id="gen" type="button">Generate Bind Code</button>
+      <button class="btn ghost" id="chk" type="button">Check Activation</button>
+    </div>
+
+    <p class="status status-muted" id="status" aria-live="polite">Waiting for action.</p>
+  </section>
+</main>
+
+<script>
+const codeEl = document.getElementById("code");
+const metaEl = document.getElementById("meta");
+const statusEl = document.getElementById("status");
+const routerNameEl = document.getElementById("routerName");
+const licenseKeyEl = document.getElementById("licenseKey");
+
+const endpoints = {
+  bindCode: "/cgi-bin/icxifi/bindcode",
+  activation: "/cgi-bin/icxifi/activation",
+  activate: "/cgi-bin/icxifi/activate"
+};
+
+function setStatus(kind, message) {
+  statusEl.className = "status status-" + kind;
+  statusEl.textContent = message;
+}
+
+async function getJson(url, options = {}) {
+  const response = await fetch(url, { cache: "no-store", ...options });
+  const raw = await response.text();
+  let data = {};
+
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error("Invalid API response.");
+    }
+  }
+
+  if (!response.ok) {
+    const apiError = typeof data.error === "string" ? data.error : "HTTP " + response.status;
+    throw new Error(apiError);
+  }
+
+  return data;
+}
+
+async function getBindCode() {
+  const data = await getJson(endpoints.bindCode);
+  codeEl.textContent = data.displayCode || data.bindCode || "NONE";
+  metaEl.textContent = "Router ID: " + (data.routerId || "unknown");
+}
+
+async function checkActivation({ silent = false } = {}) {
+  const data = await getJson(endpoints.activation);
+  if (data.activated) {
+    location.href = "/icxifi/activated.html";
+    return true;
+  }
+
+  if (!silent) {
+    setStatus("bad", "Not activated. Enter license key then activate.");
+  }
+
+  return false;
+}
+
+async function activate() {
+  const routerName = routerNameEl.value.trim();
+  const licenseKey = licenseKeyEl.value.trim();
+
+  if (!routerName) {
+    setStatus("bad", "Router Name required.");
+    return;
+  }
+
+  if (!licenseKey) {
+    setStatus("bad", "License Key required.");
+    return;
+  }
+
+  setStatus("muted", "Activating...");
+
+  const data = await getJson(endpoints.activate, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "routerName=" + encodeURIComponent(routerName) + "&licenseKey=" + encodeURIComponent(licenseKey)
+  });
+
+  if (data.ok) {
+    setStatus("ok", "Activated. Verifying state...");
+    const redirected = await checkActivation({ silent: true });
+    if (!redirected) {
+      setStatus("ok", "Activation accepted. Refresh shortly if no redirect appears.");
+    }
+    return;
+  }
+
+  if (data.error === "cooldown") {
+    const retryAfter = Number(data.retryAfterSeconds);
+    const wait = Number.isFinite(retryAfter) ? retryAfter : "?";
+    setStatus("bad", "Cooldown active. Retry after " + wait + "s.");
+    return;
+  }
+
+  setStatus("bad", typeof data.error === "string" ? data.error : "Activation failed.");
+}
+
+document.getElementById("gen").addEventListener("click", () => {
+  getBindCode()
+    .then(() => setStatus("muted", "Bind code refreshed."))
+    .catch((error) => setStatus("bad", error.message));
+});
+
+document.getElementById("chk").addEventListener("click", () => {
+  checkActivation()
+    .catch((error) => setStatus("bad", error.message));
+});
+
+document.getElementById("activate").addEventListener("click", () => {
+  activate()
+    .catch((error) => setStatus("bad", error.message));
+});
+
+(async function init() {
+  try {
+    await getBindCode();
+    await checkActivation({ silent: true });
+  } catch (error) {
+    setStatus("bad", error.message);
+  }
+})();
+</script>
+</body>
+</html>

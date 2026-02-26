@@ -1,0 +1,129 @@
+#!/bin/sh
+# Debug endpoint for registration routing decision.
+# GET /cgi-bin/icxifi/registration_debug[?setup=1]
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+json_escape() {
+  printf '%s' "$1" | tr -d '\r\n' | sed 's/\\/\\\\/g;s/"/\\"/g'
+}
+
+printf 'Content-Type: application/json\r\n'
+printf 'Cache-Control: no-store\r\n\r\n'
+
+GW="$(cat /etc/icxifi/gateway_ip 2>/dev/null | tr -d '\r\n' | cut -d/ -f1)"
+GW="${GW:-10.0.0.1}"
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
+LIC="$(tr -d '\r\n' < /etc/icxifi/license_key 2>/dev/null || true)"
+
+if [ -z "$RID" ]; then
+  RID="$(ip -o link show br-lan 2>/dev/null | awk '/link\/ether/ {print tolower($17); exit}')"
+fi
+if [ -z "$RID" ]; then
+  RID="$(ip -o link show eth0 2>/dev/null | awk '/link\/ether/ {print tolower($17); exit}')"
+fi
+[ -z "$RID" ] && RID="unknown"
+
+FORCE_SETUP=0
+case "${QUERY_STRING:-}" in
+  *setup=1*|*setup=true*) FORCE_SETUP=1 ;;
+esac
+
+HAS_APIKEY=0
+[ -n "$APIKEY" ] && HAS_APIKEY=1
+HAS_LICENSE=0
+[ -n "$LIC" ] && HAS_LICENSE=1
+
+CLOUD_HTTP=0
+CLOUD_OK=0
+CLOUD_VALID=0
+CLOUD_STATE=""
+CLOUD_ERROR=""
+CLOUD_BODY=""
+
+if [ -n "$BASE" ] && [ -n "$RID" ] && [ "$RID" != "unknown" ] && [ "$HAS_APIKEY" = "1" ]; then
+  BASE="${BASE%/}"
+  case "$BASE" in
+    */api) BASE="${BASE%/api}" ;;
+  esac
+  RESP="$(curl -sS -m 6 -X GET "$BASE/api/router/state" \
+    -H "Authorization: Bearer $APIKEY" \
+    -H "X-Router-ID: $RID" \
+    -H "ngrok-skip-browser-warning: true" \
+    -w '\n%{http_code}' 2>/dev/null)" || true
+  CLOUD_HTTP="$(printf '%s' "$RESP" | tail -n1 | tr -cd '0-9')"
+  [ -z "$CLOUD_HTTP" ] && CLOUD_HTTP=0
+  CLOUD_BODY="$(printf '%s' "$RESP" | sed '$d')"
+
+  if [ "$CLOUD_HTTP" = "200" ] && printf '%s' "$CLOUD_BODY" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+    CLOUD_OK=1
+    CLOUD_VALID=1
+    CLOUD_STATE="$(printf '%s' "$CLOUD_BODY" | sed -n 's/.*"state"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null | head -1)"
+    [ -z "$CLOUD_STATE" ] && CLOUD_STATE="active"
+  elif [ "$CLOUD_HTTP" = "0" ]; then
+    CLOUD_ERROR="cloud_unreachable"
+  elif [ "$CLOUD_HTTP" = "401" ] || [ "$CLOUD_HTTP" = "403" ] || [ "$CLOUD_HTTP" = "404" ]; then
+    CLOUD_ERROR="invalid_router_credentials"
+  else
+    CLOUD_ERROR="cloud_response_$CLOUD_HTTP"
+  fi
+else
+  if [ -z "$BASE" ]; then
+    CLOUD_ERROR="missing_cloud_base_url"
+  elif [ "$RID" = "unknown" ] || [ -z "$RID" ]; then
+    CLOUD_ERROR="missing_router_id"
+  elif [ "$HAS_APIKEY" != "1" ]; then
+    CLOUD_ERROR="missing_router_api_key"
+  fi
+fi
+
+DECISION="register"
+REASON="not_registered"
+if [ "$FORCE_SETUP" = "1" ]; then
+  DECISION="register"
+  REASON="forced_setup"
+elif [ "$CLOUD_VALID" = "1" ]; then
+  case "$CLOUD_STATE" in
+    active)
+      DECISION="portal"
+      REASON="cloud_valid"
+      ;;
+    inactive|no_license)
+      DECISION="notice"
+      REASON="$CLOUD_STATE"
+      ;;
+    *)
+      DECISION="register"
+      REASON="cloud_unknown_state"
+      ;;
+  esac
+else
+  DECISION="register"
+  REASON="${CLOUD_ERROR:-not_registered}"
+fi
+
+REG_URL="http://${GW}:2080/register.html"
+PORTAL_URL="http://${GW}:2080/portal.html"
+NOTICE_URL="http://${GW}:2080/notice.html"
+TARGET_URL="$REG_URL"
+[ "$DECISION" = "portal" ] && TARGET_URL="$PORTAL_URL"
+[ "$DECISION" = "notice" ] && TARGET_URL="$NOTICE_URL?state=$(json_escape "$REASON")"
+
+printf '{'
+printf '"ok":true,'
+printf '"routerId":"%s",' "$(json_escape "$RID")"
+printf '"gatewayIp":"%s",' "$(json_escape "$GW")"
+printf '"cloudBase":"%s",' "$(json_escape "$BASE")"
+printf '"hasRouterApiKey":%s,' "$HAS_APIKEY"
+printf '"hasLicenseKey":%s,' "$HAS_LICENSE"
+printf '"forceSetup":%s,' "$FORCE_SETUP"
+printf '"cloud":{"httpCode":%s,"ok":%s,"valid":%s,"error":"%s"},' \
+  "$CLOUD_HTTP" "$CLOUD_OK" "$CLOUD_VALID" "$(json_escape "$CLOUD_ERROR")"
+printf '"cloudState":"%s",' "$(json_escape "$CLOUD_STATE")"
+printf '"decision":{"page":"%s","reason":"%s","targetUrl":"%s"},' \
+  "$DECISION" "$(json_escape "$REASON")" "$(json_escape "$TARGET_URL")"
+printf '"urls":{"register":"%s","portal":"%s","notice":"%s"}' \
+  "$(json_escape "$REG_URL")" "$(json_escape "$PORTAL_URL")" "$(json_escape "$NOTICE_URL")"
+printf '}\n'

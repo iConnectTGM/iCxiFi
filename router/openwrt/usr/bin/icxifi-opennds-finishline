@@ -1,0 +1,53 @@
+#!/bin/sh
+
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+# uhttpd local API/CGI listener on :2080
+if ! uci show uhttpd.main.listen_http 2>/dev/null | grep -q "0.0.0.0:2080"; then
+  uci add_list uhttpd.main.listen_http='0.0.0.0:2080'
+fi
+uci commit uhttpd
+/etc/init.d/uhttpd restart
+
+# Walled garden 2080 for preauth clients
+uci -q delete opennds.@opennds[0].walledgarden_port
+uci add_list opennds.@opennds[0].walledgarden_port='2080'
+uci -q delete opennds.@opennds[0].walledgarden_fqdn 2>/dev/null || true
+
+# Allow preauth access to cloud dashboard/login host.
+if [ -s /etc/icxifi/cloud_base_url ]; then
+  CLOUD_BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+  CLOUD_HOST="$(printf '%s' "$CLOUD_BASE" | sed -E 's#^[A-Za-z]+://##; s#/.*$##; s#:[0-9]+$##')"
+  if [ -n "$CLOUD_HOST" ]; then
+    uci add_list opennds.@opennds[0].walledgarden_fqdn="$CLOUD_HOST"
+    case "$CLOUD_HOST" in
+      *.ngrok-free.app) uci add_list opennds.@opennds[0].walledgarden_fqdn='ngrok-free.app' ;;
+    esac
+  fi
+fi
+
+# Optional extra allowed hosts (one per line).
+if [ -s /etc/icxifi/cloud_walledgarden_hosts ]; then
+  while IFS= read -r host || [ -n "$host" ]; do
+    host="$(printf '%s' "$host" | tr -d '\r' | sed 's/[[:space:]]*$//')"
+    [ -n "$host" ] || continue
+    case "$host" in
+      \#*) continue ;;
+    esac
+    uci add_list opennds.@opennds[0].walledgarden_fqdn="$host"
+  done < /etc/icxifi/cloud_walledgarden_hosts
+fi
+
+# Keep preemptive auth ON for CGI-driven ndsctl auth flow
+uci -q set opennds.@opennds[0].allow_preemptive_authentication='1'
+
+# Remove implicit trusted MACs (operator may add explicit whitelist later)
+uci -q delete opennds.@opennds[0].trustedmac
+
+uci commit opennds
+/etc/init.d/opennds restart
+
+echo "Finish-line config applied. Verify with:"
+echo "  netstat -lntp | egrep '2050|2080'"
+echo "  uci show opennds | grep -E 'walledgarden_port|walledgarden_fqdn|allow_preemptive_authentication|trustedmac'"

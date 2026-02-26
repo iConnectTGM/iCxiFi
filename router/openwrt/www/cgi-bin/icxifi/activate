@@ -1,0 +1,135 @@
+#!/bin/sh
+# POST: routerName, licenseKey, bindCode. Calls cloud /api/router/activate, saves router_api_key on success.
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+print_json() {
+  printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n%s\n' "$1"
+}
+
+print_redirect() {
+  target="$1"
+  printf 'Status: 302 Found\r\nLocation: %s\r\nCache-Control: no-store\r\n\r\n' "$target"
+}
+
+append_query_param() {
+  base="$1"
+  key="$2"
+  val="$3"
+  case "$base" in
+    *\?*) sep='&' ;;
+    *) sep='?' ;;
+  esac
+  printf '%s%s%s=%s' "$base" "$sep" "$key" "$val"
+}
+
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+APIKEY_FILE="/etc/icxifi/router_api_key"
+APIKEY_BAK="/etc/icxifi/router_api_key.bak"
+LICENSE_FILE="/etc/icxifi/license_key"
+LICENSE_BAK="/etc/icxifi/license_key.bak"
+
+if [ -z "$BASE" ] || [ -z "$RID" ]; then
+  print_json '{"ok":false,"error":"Missing cloud_base_url or router_id"}'
+  exit 0
+fi
+
+if [ "$REQUEST_METHOD" != "POST" ] && [ "$REQUEST_METHOD" != "GET" ]; then
+  print_json '{"ok":false,"error":"GET or POST required"}'
+  exit 0
+fi
+
+# Parse request args from query (GET) or body (POST)
+QUERY_STRING="${QUERY_STRING:-}"
+if [ "$REQUEST_METHOD" = "POST" ] && [ -n "${CONTENT_LENGTH:-}" ] && [ "$CONTENT_LENGTH" -gt 0 ] 2>/dev/null; then
+  max="$CONTENT_LENGTH"
+  [ "$max" -gt 4096 ] 2>/dev/null && max=4096
+  QUERY_STRING="$(dd bs=1 count=$max 2>/dev/null)"
+fi
+
+get_param() {
+  key="$1"
+  val="$(printf '%s' "$QUERY_STRING" | sed 's/&/\n/g' | grep "^${key}=" | head -1 | cut -d= -f2-)"
+  [ -z "$val" ] && return
+  printf '%s' "$val" | sed 's/+/ /g' | sed 's/%20/ /g;s/%21/!/g;s/%22/"/g;s/%23/#/g;s/%24/$/g;s/%25/%/g;s/%26/\&/g;s/%27/'"'"'/g;s/%28/(/g;s/%29/)/g;s/%2A/*/g;s/%2B/+/g;s/%2C/,/g;s/%2D/-/g;s/%2E/./g;s/%2F/\//g;s/%3A/:/g;s/%3B/;/g;s/%3D/=/g;s/%3F/?/g;s/%40/@/g'
+}
+
+ROUTER_NAME="$(get_param 'routerName')"
+LICENSE_KEY="$(get_param 'licenseKey')"
+BIND_CODE="$(get_param 'bindCode')"
+RETURN_URL="$(get_param 'returnUrl')"
+
+case "$RETURN_URL" in
+  http://*|https://*) ;;
+  *) RETURN_URL="" ;;
+esac
+
+if [ -z "$ROUTER_NAME" ] || [ -z "$LICENSE_KEY" ] || [ -z "$BIND_CODE" ]; then
+  if [ -n "$RETURN_URL" ]; then
+    target="$(append_query_param "$RETURN_URL" "routerActivationError" "missing_fields")"
+    print_redirect "$target"
+    exit 0
+  fi
+  print_json '{"ok":false,"error":"routerName, licenseKey and bindCode required"}'
+  exit 0
+fi
+
+BASE="${BASE%/}"
+BODY="$(printf '{"routerName":"%s","routerId":"%s","bindCode":"%s","licenseKey":"%s"}' \
+  "$(printf '%s' "$ROUTER_NAME" | sed 's/\\/\\\\/g;s/"/\\"/g')" \
+  "$(printf '%s' "$RID" | sed 's/\\/\\\\/g;s/"/\\"/g')" \
+  "$(printf '%s' "$BIND_CODE" | sed 's/\\/\\\\/g;s/"/\\"/g')" \
+  "$(printf '%s' "$LICENSE_KEY" | sed 's/\\/\\\\/g;s/"/\\"/g')")"
+
+RESP="$(curl -sS -m 15 -X POST "${BASE}/api/router/activate" \
+  -H "Content-Type: application/json" \
+  -H "ngrok-skip-browser-warning: true" \
+  -d "$BODY" 2>/dev/null)" || true
+
+if printf '%s' "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+  APIKEY="$(printf '%s' "$RESP" | sed -n 's/.*"routerApiKey"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  if [ -n "$APIKEY" ]; then
+    mkdir -p /etc/icxifi
+    printf '%s' "$APIKEY" > "$APIKEY_FILE"
+    chmod 600 "$APIKEY_FILE"
+    chown root:root "$APIKEY_FILE" 2>/dev/null || true
+    printf '%s' "$APIKEY" > "$APIKEY_BAK" 2>/dev/null || true
+    chmod 600 "$APIKEY_BAK" 2>/dev/null || true
+    chown root:root "$APIKEY_BAK" 2>/dev/null || true
+  fi
+  # Store license key for later reference on the router
+  if [ -n "$LICENSE_KEY" ]; then
+    printf '%s' "$LICENSE_KEY" > "$LICENSE_FILE" 2>/dev/null || true
+    chmod 600 "$LICENSE_FILE" 2>/dev/null || true
+    chown root:root "$LICENSE_FILE" 2>/dev/null || true
+    printf '%s' "$LICENSE_KEY" > "$LICENSE_BAK" 2>/dev/null || true
+    chmod 600 "$LICENSE_BAK" 2>/dev/null || true
+    chown root:root "$LICENSE_BAK" 2>/dev/null || true
+  fi
+  if [ -n "$RETURN_URL" ]; then
+    target="$(append_query_param "$RETURN_URL" "routerActivated" "1")"
+    print_redirect "$target"
+    exit 0
+  fi
+  print_json '{"ok":true}'
+else
+  ERR="$(printf '%s' "$RESP" | sed -n 's/.*"error"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  RETRY="$(printf '%s' "$RESP" | sed -n 's/.*"retryAfterSeconds"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p')"
+  if [ -n "$RETURN_URL" ]; then
+    if [ -n "$RETRY" ]; then
+      target="$(append_query_param "$RETURN_URL" "routerActivationError" "cooldown")"
+      target="$(append_query_param "$target" "retryAfter" "$RETRY")"
+      print_redirect "$target"
+      exit 0
+    fi
+    target="$(append_query_param "$RETURN_URL" "routerActivationError" "activation_failed")"
+    print_redirect "$target"
+    exit 0
+  fi
+  if [ -n "$RETRY" ]; then
+    print_json "{\"ok\":false,\"error\":\"cooldown\",\"retryAfterSeconds\":$RETRY}"
+  else
+    print_json "{\"ok\":false,\"error\":\"${ERR:-Activation failed}\"}"
+  fi
+fi

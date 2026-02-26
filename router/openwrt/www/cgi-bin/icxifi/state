@@ -1,0 +1,69 @@
+#!/bin/sh
+# Router state probe for local UI.
+# Uses cloud /api/router/state with router credentials; falls back to local inference.
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+json_escape() {
+  printf '%s' "$1" | tr -d '\r\n' | sed 's/\\/\\\\/g;s/"/\\"/g'
+}
+
+print_json() {
+  printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n%s\n' "$1"
+}
+
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
+LIC="$(tr -d '\r\n' < /etc/icxifi/license_key 2>/dev/null || true)"
+
+if [ -z "$RID" ]; then
+  RID="$(ip -o link show br-lan 2>/dev/null | awk '/link\/ether/ {print tolower($17); exit}')"
+fi
+if [ -z "$RID" ]; then
+  RID="$(ip -o link show eth0 2>/dev/null | awk '/link\/ether/ {print tolower($17); exit}')"
+fi
+[ -z "$RID" ] && RID="unknown"
+
+LOCAL_STATE="unknown"
+if [ -z "$LIC" ]; then
+  LOCAL_STATE="no_license"
+elif [ -f /etc/icxifi/suspended ]; then
+  LOCAL_STATE="inactive"
+fi
+
+if [ -z "$BASE" ] || [ -z "$APIKEY" ] || [ "$RID" = "unknown" ]; then
+  print_json "$(printf '{"ok":false,"routerId":"%s","state":"%s","status":"unknown","licenseKey":"%s","error":"missing_router_credentials"}' \
+    "$(json_escape "$RID")" "$(json_escape "$LOCAL_STATE")" "$(json_escape "$LIC")")"
+  exit 0
+fi
+
+BASE="${BASE%/}"
+case "$BASE" in
+  */api) BASE="${BASE%/api}" ;;
+esac
+RESP="$(curl -sS -m 8 -X GET "${BASE}/api/router/state" \
+  -H "Authorization: Bearer ${APIKEY}" \
+  -H "X-Router-ID: ${RID}" \
+  -H "ngrok-skip-browser-warning: true" \
+  -w '\n%{http_code}' 2>/dev/null)" || true
+
+HTTP_CODE="$(printf '%s' "$RESP" | tail -n1 | tr -cd '0-9')"
+[ -z "$HTTP_CODE" ] && HTTP_CODE="0"
+BODY="$(printf '%s' "$RESP" | sed '$d')"
+
+if [ "$HTTP_CODE" = "200" ] && printf '%s' "$BODY" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+  printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n%s\n' "$BODY"
+  exit 0
+fi
+
+ERR="cloud_unreachable"
+case "$HTTP_CODE" in
+  401|403|404) ERR="invalid_router_credentials" ;;
+  0) ERR="cloud_unreachable" ;;
+  *) ERR="cloud_response_${HTTP_CODE}" ;;
+esac
+
+print_json "$(printf '{"ok":false,"routerId":"%s","state":"%s","status":"unknown","licenseKey":"%s","error":"%s","httpCode":%s}' \
+  "$(json_escape "$RID")" "$(json_escape "$LOCAL_STATE")" "$(json_escape "$LIC")" "$(json_escape "$ERR")" "$HTTP_CODE")"
+exit 0

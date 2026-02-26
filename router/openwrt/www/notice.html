@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iCxiFi | Router Notice</title>
+<style>
+  :root {
+    --bg: #081121;
+    --panel: #131f31;
+    --line: rgba(130, 165, 210, 0.25);
+    --text: #dbe8f7;
+    --muted: #97abc4;
+    --warn: #ffc24e;
+    --bad: #ff8a8a;
+    --ok: #6bffbe;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 14px;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: linear-gradient(165deg, #091628 0%, #07111f 55%, #060d19 100%);
+  }
+  .card {
+    width: min(560px, 100%);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.2)), var(--panel);
+  }
+  h1 {
+    margin: 0;
+    font-size: 1.4rem;
+    color: var(--warn);
+  }
+  .sub {
+    margin: 8px 0 14px;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .pill {
+    display: inline-block;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+  }
+  .pill.bad {
+    color: var(--bad);
+    border-color: rgba(255, 138, 138, 0.4);
+    background: rgba(255, 138, 138, 0.1);
+  }
+  .pill.warn {
+    color: var(--warn);
+    border-color: rgba(255, 194, 78, 0.45);
+    background: rgba(255, 194, 78, 0.1);
+  }
+  .grid {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0;
+    font-size: 0.92rem;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 130px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: rgba(4, 8, 14, 0.5);
+  }
+  .row .k { color: var(--muted); }
+  .row .v { word-break: break-all; }
+  .btn {
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: rgba(13, 24, 39, 0.9);
+    color: var(--text);
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: rgba(130, 165, 210, 0.55); }
+  .btn.primary {
+    border-color: rgba(255, 194, 78, 0.45);
+    background: linear-gradient(180deg, #ffc249 0%, #f0a000 100%);
+    color: #1b1404;
+    font-weight: 700;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+  .hint {
+    margin-top: 10px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+  <main class="card">
+    <span id="statePill" class="pill warn">Checking</span>
+    <h1 id="title">Router Notice</h1>
+    <p id="message" class="sub">Checking router status...</p>
+
+    <div class="grid">
+      <div class="row">
+        <div class="k">Router ID</div>
+        <div id="routerId" class="v">-</div>
+        <button class="btn" type="button" data-copy="routerId">Copy</button>
+      </div>
+      <div class="row">
+        <div class="k">Owner name</div>
+        <div id="ownerName" class="v">-</div>
+        <span></span>
+      </div>
+      <div class="row">
+        <div class="k">Owner email</div>
+        <div id="ownerEmail" class="v">-</div>
+        <button class="btn" type="button" data-copy="ownerEmail">Copy</button>
+      </div>
+      <div class="row">
+        <div class="k">License</div>
+        <div id="licenseKey" class="v">-</div>
+        <span></span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="openLoginBtn" class="btn primary" type="button">Open Client UI Login</button>
+      <button id="openRegisterBtn" class="btn" type="button">Open Router Register</button>
+    </div>
+
+    <p id="hint" class="hint">
+      If no license: log in to Client UI, open Routers, then add a license key. If inactive: set router back to active.
+    </p>
+  </main>
+
+<script>
+  function q(id) { return document.getElementById(id); }
+  function esc(v) { return String(v || '-'); }
+  function toast(msg) { window.alert(msg); }
+
+  let stateData = {};
+
+  function buildClientLoginUrl() {
+    const p = new URLSearchParams();
+    p.set('auth', 'login');
+    const rid = (stateData.routerId || '').trim();
+    if (rid) p.set('routerId', rid);
+    const registerUrl = window.location.origin + '/register.html';
+    p.set('routerRegisterUrl', registerUrl);
+    p.set('gatewayIp', window.location.hostname || '');
+    return '/cgi-bin/icxifi/open_client_ui?' + p.toString();
+  }
+
+  function renderState() {
+    const state = (stateData.state || '').toLowerCase();
+    const status = (stateData.status || '').toLowerCase();
+    const owner = stateData.owner || {};
+
+    q('routerId').textContent = esc(stateData.routerId);
+    q('ownerName').textContent = esc(owner.name);
+    q('ownerEmail').textContent = esc(owner.email);
+    q('licenseKey').textContent = esc(stateData.licenseKey);
+
+    const pill = q('statePill');
+    const title = q('title');
+    const message = q('message');
+
+    if (state === 'no_license') {
+      pill.textContent = 'No License';
+      pill.className = 'pill warn';
+      title.textContent = 'Router Has No License';
+      message.textContent = 'This router needs a license before it can serve internet traffic.';
+      return;
+    }
+
+    if (state === 'inactive' || status === 'disabled' || status === 'revoked') {
+      pill.textContent = 'Inactive';
+      pill.className = 'pill bad';
+      title.textContent = 'Router Is Inactive';
+      message.textContent = 'This router was set inactive by the account owner or admin.';
+      return;
+    }
+
+    pill.textContent = 'Needs Setup';
+    pill.className = 'pill warn';
+    title.textContent = 'Router Needs Registration';
+    message.textContent = 'Router state is unavailable. Continue with router registration.';
+  }
+
+  async function loadState() {
+    try {
+      const r = await fetch('/cgi-bin/icxifi/state', { cache: 'no-store' });
+      const j = await r.json();
+      stateData = j || {};
+      renderState();
+    } catch (e) {
+      stateData = {};
+      renderState();
+    }
+  }
+
+  document.querySelectorAll('[data-copy]').forEach((btn) => {
+    btn.onclick = async () => {
+      const key = btn.getAttribute('data-copy');
+      const v = key === 'routerId'
+        ? (stateData.routerId || '')
+        : ((stateData.owner && stateData.owner.email) || '');
+      if (!v) {
+        toast('Nothing to copy');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(v);
+        toast('Copied');
+      } catch (_) {
+        window.prompt('Copy this value:', v);
+      }
+    };
+  });
+
+  q('openLoginBtn').onclick = () => {
+    window.location.href = buildClientLoginUrl();
+  };
+  q('openRegisterBtn').onclick = () => {
+    window.location.href = '/register.html';
+  };
+
+  loadState();
+</script>
+</body>
+</html>

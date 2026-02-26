@@ -1,0 +1,268 @@
+#!/bin/sh
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+
+choose_src_root() {
+  for candidate in \
+    "${ICXIFI_SRC_ROOT:-}" \
+    "$SCRIPT_DIR/../.." \
+    "/root/router/openwrt" \
+    "/tmp/router/openwrt" \
+    "/overlay/icxifi"; do
+    [ -n "$candidate" ] || continue
+    if [ -f "$candidate/etc/opennds/htdocs/opennds_preauth/icxifi/index.html" ] && \
+       [ -f "$candidate/www/cgi-bin/icxifi/vend" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  printf '/'
+}
+
+SRC_ROOT="$(choose_src_root)"
+
+PORTAL_DIR="/etc/opennds/htdocs/opennds_preauth/icxifi"
+PORTAL_LEGACY_DIR="/etc/opennds/htdocs/icxifi"
+CGI_DIR="/www/cgi-bin/icxifi"
+
+mkdir -p "$PORTAL_DIR" "$PORTAL_LEGACY_DIR" "$CGI_DIR" /etc/icxifi
+
+copy_file() {
+  src="$1"
+  dst="$2"
+  mode="$3"
+
+  if [ ! -f "$src" ]; then
+    printf 'WARN: missing source %s\n' "$src"
+    return 1
+  fi
+
+  src_real="$(readlink -f "$src" 2>/dev/null || printf '%s' "$src")"
+  dst_real="$(readlink -f "$dst" 2>/dev/null || printf '%s' "$dst")"
+
+  if [ "$src_real" != "$dst_real" ]; then
+    cp -f "$src" "$dst"
+  fi
+
+  chmod "$mode" "$dst"
+  return 0
+}
+
+# Portal assets
+copy_file "$SRC_ROOT/etc/opennds/htdocs/opennds_preauth/icxifi/index.html" "$PORTAL_DIR/index.html" 0644 || true
+copy_file "$SRC_ROOT/etc/opennds/htdocs/opennds_preauth/icxifi/app.js" "$PORTAL_DIR/app.js" 0644 || true
+copy_file "$SRC_ROOT/etc/opennds/htdocs/opennds_preauth/icxifi/style.css" "$PORTAL_DIR/style.css" 0644 || true
+
+# Keep legacy path in sync for builds that serve /etc/opennds/htdocs/icxifi
+copy_file "$PORTAL_DIR/index.html" "$PORTAL_LEGACY_DIR/index.html" 0644 || true
+copy_file "$PORTAL_DIR/app.js" "$PORTAL_LEGACY_DIR/app.js" 0644 || true
+copy_file "$PORTAL_DIR/style.css" "$PORTAL_LEGACY_DIR/style.css" 0644 || true
+
+# CGI endpoints
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/vend" "$CGI_DIR/vend" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/redeem" "$CGI_DIR/redeem" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/profile" "$CGI_DIR/profile" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/esp_vend" "$CGI_DIR/esp_vend" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/cpd_redirect" "$CGI_DIR/cpd_redirect" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/bindcode" "$CGI_DIR/bindcode" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/activation" "$CGI_DIR/activation" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/activate" "$CGI_DIR/activate" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/open_client_ui" "$CGI_DIR/open_client_ui" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/state" "$CGI_DIR/state" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/portal_redirect" "$CGI_DIR/portal_redirect" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/session" "$CGI_DIR/session" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/pause" "$CGI_DIR/pause" 0755 || true
+copy_file "$SRC_ROOT/www/cgi-bin/icxifi/resume" "$CGI_DIR/resume" 0755 || true
+
+# Phase 3: config apply script (skip cp if src and dst are same file)
+if [ -f "$SRC_ROOT/usr/bin/icxifi-apply-config" ]; then
+  if ! [ "$SRC_ROOT/usr/bin/icxifi-apply-config" -ef /usr/bin/icxifi-apply-config ]; then
+    cp -f "$SRC_ROOT/usr/bin/icxifi-apply-config" /usr/bin/icxifi-apply-config
+  fi
+  chmod +x /usr/bin/icxifi-apply-config
+fi
+# Phase 5: offline pool + heartbeat + pull-config (skip cp if src and dst same)
+for script in icxifi-replenish-pool icxifi-sync-pending icxifi-heartbeat icxifi-pull-config; do
+  src="$SRC_ROOT/usr/bin/$script"
+  if [ -f "$src" ] && ! [ "$src" -ef "/usr/bin/$script" ]; then
+    cp -f "$src" "/usr/bin/$script" && chmod +x "/usr/bin/$script"
+  elif [ -f "/usr/bin/$script" ]; then
+    chmod +x "/usr/bin/$script"
+  fi
+done
+
+# Cron: heartbeat every 2 min (updates lastSeenAt for Admin UI Online status)
+# Cron: pull-config every 5 min (sync license, profile, commands)
+if [ -s /etc/icxifi/router_api_key ]; then
+  /usr/bin/icxifi-heartbeat 2>/dev/null || true
+  mkdir -p /etc/crontabs
+  grep -q 'icxifi-heartbeat' /etc/crontabs/root 2>/dev/null || \
+    echo '* * * * * /usr/bin/icxifi-heartbeat' >> /etc/crontabs/root
+  grep -q 'icxifi-pull-config' /etc/crontabs/root 2>/dev/null || \
+    echo '*/5 * * * * /usr/bin/icxifi-pull-config' >> /etc/crontabs/root
+  [ -x /etc/init.d/cron ] && /etc/init.d/cron enable 2>/dev/null && /etc/init.d/cron start 2>/dev/null || [ -x /etc/init.d/crond ] && /etc/init.d/crond enable 2>/dev/null && /etc/init.d/crond start 2>/dev/null || true
+fi
+chmod +x /usr/bin/icxifi-opennds-install 2>/dev/null || true
+
+# Security baseline for router API key
+if [ -f /etc/icxifi/router_api_key ]; then
+  chmod 600 /etc/icxifi/router_api_key || true
+  chown root:root /etc/icxifi/router_api_key 2>/dev/null || true
+fi
+
+# DNS for ngrok/cloud: ensure dnsmasq can resolve external hostnames (e.g. ngrok-free.app)
+if [ -f /etc/icxifi/cloud_base_url ] && grep -q ngrok /etc/icxifi/cloud_base_url 2>/dev/null; then
+  mkdir -p /etc/icxifi
+  printf 'nameserver 8.8.8.8\nnameserver 8.8.4.4\n' > /etc/icxifi/resolv.upstream 2>/dev/null
+  uci -q set dhcp.@dnsmasq[0].noresolv='1'
+  uci -q set dhcp.@dnsmasq[0].resolvfile='/etc/icxifi/resolv.upstream'
+  uci commit dhcp
+  /etc/init.d/dnsmasq restart 2>/dev/null || true
+fi
+
+# uhttpd local listener for preauth CGI/API
+if ! uci show uhttpd.main.listen_http 2>/dev/null | grep -q "0.0.0.0:2080"; then
+  uci add_list uhttpd.main.listen_http='0.0.0.0:2080'
+fi
+# Ensure root (/) serves our index.html; CPD paths alias to CGI (returns 302)
+uci -q set uhttpd.main.home='/www'
+uci -q set uhttpd.main.index_page='index.html'
+uci -q set uhttpd.main.error_page='/cgi-bin/icxifi/cpd_redirect'
+# Explicit aliases: /generate_204 etc -> CGI (bypasses 404; some builds ignore error_page)
+for p in generate_204 hotspot-detect.html connecttest.txt ncsi.txt; do
+  uci add_list uhttpd.main.alias="/$p=/cgi-bin/icxifi/cpd_redirect" 2>/dev/null || true
+done
+uci commit uhttpd
+/etc/init.d/uhttpd restart
+
+# Serve FAS portal from uhttpd (avoid OpenNDS ThemeSpec on 2050)
+mkdir -p /www/opennds_preauth
+ln -sf /etc/opennds/htdocs/opennds_preauth/icxifi /www/opennds_preauth/icxifi 2>/dev/null || true
+# Portal at /index.html: copy portal assets + CPD redirect files
+GW_IP=$(uci get network.lan.ipaddr 2>/dev/null || ip -4 addr show br-lan 2>/dev/null | grep -oE 'inet [0-9.]+' | awk '{print $2}' | head -1 || echo "192.168.1.1")
+GW_IP="${GW_IP%%/*}"
+GW_IP=$(echo "$GW_IP" | awk -F/ '{print $1}')
+printf '%s' "$GW_IP" > /etc/icxifi/gateway_ip 2>/dev/null || true
+for f in index.html style.css app.js portal.html register.html notice.html activated.html logo.svg; do
+  if [ -f "$SRC_ROOT/www/$f" ]; then
+    cp -f "$SRC_ROOT/www/$f" "/www/$f" 2>/dev/null || true
+  fi
+done
+# CPD paths: remove static files so 404 -> error_page -> cpd_redirect CGI (returns 302)
+rm -f /www/generate_204 /www/hotspot-detect.html /www/connecttest.txt /www/ncsi.txt 2>/dev/null || true
+
+# openNDS captive behavior (login_option 0 = use FAS)
+# Redirect URL: http://GATEWAY_IP:2080/index.html?fas=... (port 2080 is reliable)
+# Custom status page: redirect openNDS "Continue" page to our FAS portal
+mkdir -p /usr/lib/opennds
+cp -f "$SRC_ROOT/usr/lib/opennds/icxifi-status-redirect.sh" /usr/lib/opennds/icxifi-status-redirect.sh 2>/dev/null || true
+chmod +x /usr/lib/opennds/icxifi-status-redirect.sh 2>/dev/null || true
+uci -q set opennds.@opennds[0].statuspath='/usr/lib/opennds/icxifi-status-redirect.sh'
+# fasremotefqdn empty = use fasremoteip. Hostnames (wifi.lan) can NXDOMAIN on iOS CPD (uses external DNS)
+uci -q delete opennds.@opennds[0].fasremotefqdn 2>/dev/null || true
+uci -q set opennds.@opennds[0].fasremoteip="$GW_IP"
+uci -q set opennds.@opennds[0].login_option_enabled='0'
+uci -q set opennds.@opennds[0].allow_preemptive_authentication='1'
+uci -q delete opennds.@opennds[0].trustedmac
+uci -q delete opennds.@opennds[0].walledgarden_port
+# Keep local captive portal/CGI port only.
+uci add_list opennds.@opennds[0].walledgarden_port='2080'
+uci -q delete opennds.@opennds[0].walledgarden_fqdn 2>/dev/null || true
+uci -q set opennds.@opennds[0].fasport='2080'
+uci -q set opennds.@opennds[0].faspath='/index.html'
+# Preauth: DNS (CPD), DHCP, portal. Port 80 is intercepted by OpenNDS -> portal.
+uci -q delete opennds.@opennds[0].users_to_router 2>/dev/null || true
+uci add_list opennds.@opennds[0].users_to_router='allow udp port 53'
+uci add_list opennds.@opennds[0].users_to_router='allow tcp port 53'
+uci add_list opennds.@opennds[0].users_to_router='allow udp port 67'
+uci add_list opennds.@opennds[0].users_to_router='allow tcp port 80'
+uci add_list opennds.@opennds[0].users_to_router='allow tcp port 2080'
+# Preauth cloud access for "Open Client Login/Register".
+# openNDS allows only declared FQDNs while client is unauthenticated.
+if [ -s /etc/icxifi/cloud_base_url ]; then
+  CLOUD_BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+  CLOUD_HOST="$(printf '%s' "$CLOUD_BASE" | sed -E 's#^[A-Za-z]+://##; s#/.*$##; s#:[0-9]+$##')"
+  if [ -n "$CLOUD_HOST" ]; then
+    uci add_list opennds.@opennds[0].walledgarden_fqdn="$CLOUD_HOST"
+    case "$CLOUD_HOST" in
+      *.ngrok-free.app)
+        # ngrok subdomains rotate often during development.
+        uci add_list opennds.@opennds[0].walledgarden_fqdn='ngrok-free.app'
+        ;;
+    esac
+  fi
+fi
+# Optional extra domains, one host per line (for CDN/auth providers if needed).
+if [ -s /etc/icxifi/cloud_walledgarden_hosts ]; then
+  while IFS= read -r host || [ -n "$host" ]; do
+    host="$(printf '%s' "$host" | tr -d '\r' | sed 's/[[:space:]]*$//')"
+    [ -n "$host" ] || continue
+    case "$host" in
+      \#*) continue ;;
+    esac
+    uci add_list opennds.@opennds[0].walledgarden_fqdn="$host"
+  done < /etc/icxifi/cloud_walledgarden_hosts
+fi
+# RFC 8910: DHCP option 114 sends portal URL so clients can auto-open (if supported)
+uci -q set opennds.@opennds[0].dhcp_default_url_enable='1'
+# gatewayfqdn disable = port 80 stays on uhttpd (LuCI + our CPD files)
+uci -q set opennds.@opennds[0].gatewayfqdn='disable'
+# Ensure fasremoteip has no /16 (critical: broken value causes 10.0.0.1/16:2080 redirect, blank portal)
+uci -q set opennds.@opennds[0].fasremoteip="$(echo "$GW_IP" | cut -d/ -f1)"
+uci commit opennds
+/etc/init.d/opennds restart
+
+# OpenNDS needs dnsmasq-full (ipset/nftset). Standard dnsmasq causes "Dnsmasq reload failed" and "Unable to configure walledgarden".
+if ! opkg list-installed 2>/dev/null | grep -q '^dnsmasq-full '; then
+  echo "WARN: Install dnsmasq-full for OpenNDS: opkg update && opkg install dnsmasq-full"
+fi
+# Captive Portal Detection (CPD): DNS redirect CPD domains to gateway so devices auto-pop portal
+# Android: connectivitycheck.gstatic.com | iOS: captive.apple.com | Windows: msftconnecttest.com
+GW_IP="${GW_IP:-$(uci get network.lan.ipaddr 2>/dev/null || ip -4 addr show br-lan 2>/dev/null | grep -oE 'inet [0-9.]+' | awk '{print $2}' | head -1 || echo "192.168.1.1")}"
+GW_IP="${GW_IP%%/*}"
+# CPD domains: DNS redirect to gateway so devices detect captive portal
+for dom in captive.apple.com connectivitycheck.gstatic.com connectivitycheck.android.com www.msftconnecttest.com msftconnecttest.com detectportal.firefox.com clients3.google.com; do
+  uci add_list dhcp.@dnsmasq[0].address="/$dom/$GW_IP" 2>/dev/null || true
+done
+uci commit dhcp 2>/dev/null || true
+/etc/init.d/dnsmasq restart 2>/dev/null || true
+
+cat <<'EOF'
+
+iCxiFi openNDS install complete.
+
+Portal: http://GATEWAY_IP:2080/index.html
+CPD: DNS + /www/generate_204, hotspot-detect.html. Many newer phones use HTTPS for CPD - cannot intercept; user opens http://GATEWAY_IP:2080 manually.
+
+TEST CHECKLIST:
+1) Service ports:
+   /etc/init.d/opennds status
+   netstat -lntp | egrep '2050|2080'
+
+2) CPD redirect (from router): curl -sI "http://127.0.0.1/generate_204" | head -5
+3) Portal:
+   wget -qO- "http://${GW_IP:-10.0.0.1}:2080/index.html" | head
+
+4) Local CGI endpoints:
+   curl -s "http://172.22.0.1:2080/cgi-bin/icxifi/profile"
+   curl -s "http://172.22.0.1:2080/cgi-bin/icxifi/vend?amount=10&deviceId=vendo-1"
+
+5) Auth: ndsctl status
+   ndsctl status
+   ndsctl json
+   tail -n 50 /tmp/icxifi_auth_debug.log
+
+6) Trusted MAC:
+   uci show opennds | grep -i trusted || true
+
+7) "No pop-up" / "have traffic" troubleshooting:
+   - No pop-up: Many phones use HTTPS for CPD - we cannot intercept. User opens http://GATEWAY_IP:2080 manually.
+   - Have traffic without login: Check OpenNDS is managing your interface:
+     ndsctl status
+     uci get opennds.@opennds[0].gatewayinterface
+   - From a connected phone (before login): try http://10.0.0.1 - should redirect to portal. If you get LuCI or full web, interception may not be working.
+   - Restart: /etc/init.d/opennds restart && /etc/init.d/firewall restart
+
+EOF
