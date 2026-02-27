@@ -10,6 +10,12 @@ set -eu
 GW="$(cat /etc/icxifi/gateway_ip 2>/dev/null | tr -d '\r\n' | cut -d/ -f1)"
 GW="${GW:-10.0.0.1}"
 CLOUD_STATE="unknown"
+LOCAL_APIKEY=0
+LOCAL_LICENSE=0
+[ -s /etc/icxifi/router_api_key ] && LOCAL_APIKEY=1
+[ -s /etc/icxifi/license_key ] && LOCAL_LICENSE=1
+LOCAL_SUSPENDED=0
+[ -f /etc/icxifi/suspended ] && LOCAL_SUSPENDED=1
 
 probe_cloud_state() {
   BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
@@ -53,10 +59,9 @@ probe_cloud_state() {
     return 0
   fi
 
-  # If cloud says credentials are invalid, clear stale local registration markers.
+  # If cloud says credentials are invalid, require explicit re-activation flow.
   if [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ] || [ "$HTTP_CODE" = "404" ]; then
-    rm -f /etc/icxifi/router_api_key /etc/icxifi/license_key 2>/dev/null || true
-    CLOUD_STATE="not_registered"
+    CLOUD_STATE="invalid_credentials"
     return 1
   fi
 
@@ -89,7 +94,14 @@ elif probe_cloud_state; then
       ;;
   esac
 else
-  REDIRECT="http://${GW}:2080/register.html${QS}"
+  # Degraded fallback: keep portal reachable on temporary cloud outage
+  # when router has local credentials and is not suspended.
+  if [ "$CLOUD_STATE" = "cloud_unreachable" ] && \
+     [ "$LOCAL_APIKEY" = "1" ] && [ "$LOCAL_LICENSE" = "1" ] && [ "$LOCAL_SUSPENDED" = "0" ]; then
+    REDIRECT="http://${GW}:2080/portal.html${QS}"
+  else
+    REDIRECT="http://${GW}:2080/register.html${QS}"
+  fi
 fi
 printf 'Status: 302 Found\r\nLocation: %s\r\nContent-Type: text/html\r\n\r\n' "$REDIRECT"
 printf '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=%s"></head><body>Redirecting...</body></html>' "$REDIRECT"

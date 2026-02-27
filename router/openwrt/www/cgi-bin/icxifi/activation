@@ -17,6 +17,7 @@ fi
 [ -z "$RID" ] && RID="unknown"
 
 ACTIVATED=0
+PROBE_ERROR=""
 
 if [ -s /etc/icxifi/router_api_key ]; then
   BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
@@ -46,10 +47,20 @@ if [ -s /etc/icxifi/router_api_key ]; then
         chmod 600 /etc/icxifi/license_key 2>/dev/null || true
       fi
     elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ] || [ "$HTTP_CODE" = "404" ]; then
-      # Stale or invalid local credentials: clear local registration markers.
-      rm -f /etc/icxifi/router_api_key /etc/icxifi/license_key 2>/dev/null || true
-      LIC=""
+      # Keep local files; user can re-activate explicitly from registration UI.
+      PROBE_ERROR="invalid_router_credentials"
+    else
+      PROBE_ERROR="cloud_unreachable"
     fi
+  fi
+fi
+
+# Degraded fallback:
+# If cloud is temporarily unreachable but local credentials exist and router is not suspended,
+# keep portal reachable instead of forcing registration loop.
+if [ "$ACTIVATED" = "0" ] && [ "$PROBE_ERROR" = "cloud_unreachable" ]; then
+  if [ -s /etc/icxifi/router_api_key ] && [ -n "$LIC" ] && [ ! -f /etc/icxifi/suspended ]; then
+    ACTIVATED=1
   fi
 fi
 
