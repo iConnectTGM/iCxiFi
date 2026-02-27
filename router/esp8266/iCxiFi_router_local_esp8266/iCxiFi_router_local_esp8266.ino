@@ -6,16 +6,21 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 
-// Stable defaults for ESP8266 (avoid boot-strap pins D3/D4/D8)
-static const uint8_t COIN_PIN = D5;      // coin pulse input
-static const uint8_t COIN_SET_PIN = D6;  // coin acceptor enable
-static const uint8_t LED_PIN = D7;       // local blinker
+// Requested pin defaults:
+// - coin pulse input: D4
+// - coin set/powercut relay: D8
+// - blinker LED: RX (GPIO3)
+static const uint8_t COIN_PIN = D4;      // coin pulse input
+static const uint8_t COIN_SET_PIN = D8;  // coin acceptor / powercut relay enable
+static const uint8_t LED_PIN = 3;        // RX (GPIO3) local blinker
 
 static const char *CONFIG_PATH = "/config.json";
 static const char *QUEUE_PATH = "/queue.txt";
 static const uint16_t DEFAULT_PORT = 2080;
 static const char *DEFAULT_HOST = "10.0.0.1:2080";
-static const uint16_t HTTP_TIMEOUT_MS = 1800;
+// Router-local CGI may call cloud and can exceed 2s on free-tier cold starts.
+// Keep this generous to avoid false deactivation on transient latency.
+static const uint16_t HTTP_TIMEOUT_MS = 8000;
 static const unsigned long ACTIVATION_POLL_MS = 60000;
 static const unsigned long STATE_POLL_MS = 90000;
 static const unsigned long PROFILE_POLL_MS = 600000;
@@ -119,6 +124,7 @@ static String pinLabel(uint8_t gpio) {
     case 12: return "D6";
     case 13: return "D7";
     case 15: return "D8";
+    case 1: return "TX";
     case 3: return "RX";
     default: return String(gpio);
   }
@@ -357,7 +363,7 @@ static void handleRoot() {
   page += "@media(max-width:700px){.row{grid-template-columns:1fr;}}";
   page += "</style></head><body><div class='wrap'><div class='card'>";
   page += "<h1>iCxiFi ESP8266 Router Mode</h1>";
-  page += "<p>Default pins: Coin <b>D5</b>, Coin Set <b>D6</b>, Blinker <b>D7</b>.";
+  page += "<p>Default pins: Coin <b>D4</b>, Coin Set/Powercut <b>D8</b>, Blinker <b>RX</b>.";
   page += " Router local API: <code>/cgi-bin/icxifi</code>.</p>";
   page += "<p class='muted'>Default management WLAN: <b>" + String(DEFAULT_MGMT_SSID) + "</b> (hidden supported).</p>";
   page += "<form method='POST' action='/save'>";
@@ -655,16 +661,35 @@ static void refreshActivation() {
   lastActivationCode = code;
   lastActivationErr = err;
 
+  // Do not drop active state on transient transport failures.
   if (!ok) {
-    routerActivated = false;
+    if (!routerActivated) {
+      routerActivated = false;
+    } else {
+      lastActivationErr = err.length() ? ("transient_" + err) : "transient_http_error";
+    }
     return;
   }
 
   DynamicJsonDocument doc(512);
   DeserializationError jerr = deserializeJson(doc, resp);
   if (jerr) {
-    routerActivated = false;
-    lastActivationErr = "json_parse_failed";
+    if (!routerActivated) {
+      routerActivated = false;
+      lastActivationErr = "json_parse_failed";
+    } else {
+      lastActivationErr = "transient_json_parse_failed";
+    }
+    return;
+  }
+
+  if (!doc.containsKey("activated")) {
+    if (!routerActivated) {
+      routerActivated = false;
+      lastActivationErr = "invalid_activation_payload";
+    } else {
+      lastActivationErr = "transient_invalid_activation_payload";
+    }
     return;
   }
 

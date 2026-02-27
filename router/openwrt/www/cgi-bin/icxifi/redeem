@@ -236,6 +236,8 @@ if printf '%s' "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
   log_debug "redeem_ok ip=$clientIp mac=$clientMac code=$code"
 
   # Grant OpenNDS access (ndsctl auth) - need at least IP or MAC
+  auth_ok=0
+  auth_out=""
   if command -v ndsctl >/dev/null 2>&1 && { [ -n "$clientIp" ] || [ -n "$clientMac" ]; }; then
     grant_mins="$(printf '%s' "$RESP" | sed -n 's/.*"minutes"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -n 1)"
     grant_dl="$(printf '%s' "$RESP" | sed -n 's/.*"downloadKbps"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -n 1)"
@@ -260,9 +262,11 @@ if printf '%s' "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
     # Try IP first (with extended params); fallback to MAC-only if IP fails
     nds_out=""
     if [ -n "$clientIp" ] && nds_out="$(ndsctl auth "$clientIp" "$grant_mins" "$grant_ul" "$grant_dl" "$grant_ulq" "$grant_dlq" "icxifi|redeem|code=$code" 2>&1)"; then
+      auth_ok=1
       log_debug "ndsctl_auth_ok ip=$clientIp"
     elif [ -n "$clientMac" ]; then
       if nds_out="$(ndsctl auth "$clientMac" 2>&1)"; then
+        auth_ok=1
         log_debug "ndsctl_auth_ok mac=$clientMac"
       else
         auth_out="$(printf '%s' "${nds_out:-}" | tr '\n' ' ' | cut -c1-200)"
@@ -272,23 +276,31 @@ if printf '%s' "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
       auth_out="$(printf '%s' "${nds_out:-}" | tr '\n' ' ' | cut -c1-200)"
       log_debug "ndsctl_auth_fail ip=$clientIp nds=$auth_out"
     fi
+  else
+    auth_out="ndsctl_missing_or_no_target"
+    log_debug "ndsctl_auth_fail ip=$clientIp mac=$clientMac nds=$auth_out"
+  fi
 
-    # Store session by MAC so user can "Continue" if they disconnect and return
-    if [ -n "$clientMac" ] || [ -n "$clientIp" ]; then
-      SESS_DIR="/tmp/icxifi_sessions"
-      mkdir -p "$SESS_DIR"
-      now_epoch="$(date +%s)"
-      if [ -n "$clientMac" ]; then
-        sess_key="$(echo "$clientMac" | tr -d ':-' | tr 'a-z' 'A-Z')"
-        [ -n "$sess_key" ] || sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
-      else
-        sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
-      fi
-      if [ -n "$sess_key" ]; then
-        printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
-          "$now_epoch" "$grant_mins" "$grant_dl" "$grant_ul" "${clientMac:-}" "${clientIp:-}" \
-          > "$SESS_DIR/${sess_key}" 2>/dev/null || true
-      fi
+  if [ "$auth_ok" != "1" ]; then
+    print_status_json 502 "Bad Gateway" '{"ok":false,"error":"openNDS auth failed"}'
+    exit 0
+  fi
+
+  # Store session by MAC so user can "Continue" if they disconnect and return
+  if [ -n "$clientMac" ] || [ -n "$clientIp" ]; then
+    SESS_DIR="/tmp/icxifi_sessions"
+    mkdir -p "$SESS_DIR"
+    now_epoch="$(date +%s)"
+    if [ -n "$clientMac" ]; then
+      sess_key="$(echo "$clientMac" | tr -d ':-' | tr 'a-z' 'A-Z')"
+      [ -n "$sess_key" ] || sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+    else
+      sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+    fi
+    if [ -n "$sess_key" ]; then
+      printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
+        "$now_epoch" "$grant_mins" "$grant_dl" "$grant_ul" "${clientMac:-}" "${clientIp:-}" \
+        > "$SESS_DIR/${sess_key}" 2>/dev/null || true
     fi
   fi
 else
