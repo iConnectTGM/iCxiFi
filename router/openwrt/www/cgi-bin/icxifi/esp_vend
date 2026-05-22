@@ -1,0 +1,358 @@
+#!/bin/sh
+
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+LOG_FILE="/tmp/icxifi_auth_debug.log"
+LOG_MAX_BYTES=262144
+RL_WINDOW_SECONDS=10
+RL_MAX_REQUESTS="${ICXIFI_RL_MAX_REQUESTS:-12}"
+PROFILE_FILE="/etc/icxifi/profile_cache.json"
+POOL_FILE="/etc/icxifi/voucher_pool.txt"
+PENDING_FILE="/etc/icxifi/pending_sales.txt"
+BASE_FILE="/etc/icxifi/cloud_base_url"
+RID_FILE="/etc/icxifi/router_id"
+APIKEY_FILE="/etc/icxifi/router_api_key"
+
+print_json() {
+  printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n%s\n' "$1"
+}
+
+print_status_json() {
+  status_code="$1"
+  status_reason="$2"
+  body="$3"
+  printf 'Status: %s %s\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n\r\n%s\n' "$status_code" "$status_reason" "$body"
+}
+
+rotate_log() {
+  if [ -f "$LOG_FILE" ]; then
+    size="$(wc -c < "$LOG_FILE" 2>/dev/null || echo 0)"
+    case "$size" in ''|*[!0-9]*) size=0 ;; esac
+    if [ "$size" -gt "$LOG_MAX_BYTES" ]; then
+      mv -f "$LOG_FILE" "${LOG_FILE}.1" 2>/dev/null || true
+      : > "$LOG_FILE"
+    fi
+  fi
+}
+
+log_debug() {
+  rotate_log
+  ts="$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date)"
+  printf '%s %s\n' "$ts" "$*" >> "$LOG_FILE"
+}
+
+urldecode() {
+  value="${1//+/ }"
+  printf '%b' "${value//%/\\x}"
+}
+
+is_uint() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac
+}
+
+safe_token() {
+  case "$1" in ''|*[!A-Za-z0-9._:-]*) return 1 ;; *) return 0 ;; esac
+}
+
+safe_mac() {
+  case "$1" in ''|*[!A-Fa-f0-9:-]*) return 1 ;; *) return 0 ;; esac
+}
+
+safe_ip() {
+  case "$1" in ''|*[!0-9.]*) return 1 ;; *.*.*.*) return 0 ;; *) return 1 ;; esac
+}
+
+safe_code() {
+  printf '%s' "$1" | grep -Eq '^(ICXF-)?[A-Z0-9]{4,32}$'
+}
+
+json_get_string() {
+  key="$1"
+  json="$2"
+  printf '%s' "$json" | tr -d '\r\n' | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n 1
+}
+
+json_get_number() {
+  key="$1"
+  json="$2"
+  printf '%s' "$json" | tr -d '\r\n' | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" | head -n 1
+}
+
+rate_limit_check() {
+  ip="$1"
+  key="$(printf '%s' "$ip" | tr -c 'A-Za-z0-9._-' '_')"
+  file="/tmp/icxifi_rl_${key}"
+  now="$(date +%s)"
+  start="$now"
+  count=0
+
+  if [ -s "$file" ]; then
+    line="$(cat "$file" 2>/dev/null || true)"
+    old_start="$(printf '%s' "$line" | awk '{print $1}')"
+    old_count="$(printf '%s' "$line" | awk '{print $2}')"
+    if is_uint "$old_start" && is_uint "$old_count" && [ $((now - old_start)) -lt "$RL_WINDOW_SECONDS" ]; then
+      start="$old_start"
+      count="$old_count"
+    fi
+  fi
+
+  count=$((count + 1))
+  printf '%s %s\n' "$start" "$count" > "$file"
+  if [ "$count" -gt "$RL_MAX_REQUESTS" ]; then
+    retry_after=$((RL_WINDOW_SECONDS - (now - start)))
+    [ "$retry_after" -lt 1 ] && retry_after=1
+    printf '%s' "$retry_after"
+    return 1
+  fi
+  return 0
+}
+
+profile_rate_field() {
+  amount="$1"
+  field="$2"
+  out=""
+  if [ -s "$PROFILE_FILE" ] && command -v jsonfilter >/dev/null 2>&1 && is_uint "$amount"; then
+    out="$(jsonfilter -i "$PROFILE_FILE" -e "@.profile.rates[@.amount=${amount}].${field}" 2>/dev/null | head -n 1 || true)"
+  fi
+  if [ -z "$out" ] && [ -s "$PROFILE_FILE" ] && is_uint "$amount"; then
+    compact="$(tr -d '\r\n\t ' < "$PROFILE_FILE" 2>/dev/null || true)"
+    out="$(printf '%s' "$compact" | sed -n "s/.*\"amount\":${amount}[^}]*\"${field}\":\([0-9][0-9]*\).*/\1/p" | head -n 1)"
+  fi
+  printf '%s' "$out"
+}
+
+rate_minutes_for_amount() {
+  amount="$1"
+  minutes="$(profile_rate_field "$amount" minutes)"
+  if ! is_uint "$minutes" || [ "$minutes" -lt 1 ]; then
+    case "$amount" in
+      5) minutes=15 ;;
+      10) minutes=35 ;;
+      20) minutes=90 ;;
+      *) minutes="$amount" ;;
+    esac
+  fi
+  printf '%s' "$minutes"
+}
+
+rate_kbps_for_amount() {
+  amount="$1"
+  field="$2"
+  value="$(profile_rate_field "$amount" "$field")"
+  if ! is_uint "$value" || [ "$value" -lt 1 ]; then
+    value=10000
+  fi
+  printf '%s' "$value"
+}
+
+rate_quota_for_amount() {
+  amount="$1"
+  field="$2"
+  value="$(profile_rate_field "$amount" "$field")"
+  if ! is_uint "$value"; then
+    value=0
+  fi
+  printf '%s' "$value"
+}
+
+resolve_mac_from_ip() {
+  ip="$1"
+  ip neigh show "$ip" 2>/dev/null | awk '{print $5; exit}'
+}
+
+resolve_ip_from_mac() {
+  mac_lc="$(printf '%s' "$1" | tr 'A-F' 'a-f')"
+  ip neigh show 2>/dev/null | awk -v mac="$mac_lc" 'tolower($5)==mac {print $1; exit}'
+}
+
+single_opennds_client() {
+  command -v ndsctl >/dev/null 2>&1 || return 1
+  ndsctl status 2>/dev/null | awk '
+    /^Client / { in_client=1; ip=""; mac="" }
+    in_client && / IP: / { ip=$2; mac=$4 }
+    in_client && / State: / {
+      if (ip != "") {
+        count++;
+        last=ip "|" mac;
+      }
+      in_client=0;
+    }
+    END {
+      if (count == 1) print last;
+      else exit 1;
+    }'
+}
+
+queue_sale() {
+  device="$1"
+  amount="$2"
+  code="$3"
+  ts="$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')"
+  mkdir -p /etc/icxifi
+  printf '%s|%s|%s|%s\n' "$device" "$amount" "$code" "$ts" >> "$PENDING_FILE" 2>/dev/null || true
+}
+
+store_session() {
+  ip="$1"
+  mac="$2"
+  minutes="$3"
+  down="$4"
+  up="$5"
+  SESS_DIR="/tmp/icxifi_sessions"
+  mkdir -p "$SESS_DIR"
+  now_epoch="$(date +%s)"
+  if [ -n "$mac" ]; then
+    sess_key="$(echo "$mac" | tr -d ':-' | tr 'a-z' 'A-Z')"
+  else
+    sess_key="ip_$(echo "$ip" | tr -c 'A-Za-z0-9' '_')"
+  fi
+  printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
+    "$now_epoch" "$minutes" "$down" "$up" "$mac" "$ip" > "$SESS_DIR/${sess_key}" 2>/dev/null || true
+}
+
+auth_client() {
+  ip="$1"
+  minutes="$2"
+  up="$3"
+  down="$4"
+  uq="$5"
+  dq="$6"
+  custom="$7"
+  try=1
+  while [ "$try" -le 5 ]; do
+    if out="$(ndsctl auth "$ip" "$minutes" "$up" "$down" "$uq" "$dq" "$custom" 2>&1)"; then
+      printf '%s' "$out"
+      return 0
+    fi
+    log_debug "esp_auth_retry ip=$ip try=$try nds=$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-160)"
+    sleep 1
+    try=$((try + 1))
+  done
+  printf '%s' "$out"
+  return 1
+}
+
+vend_pool_code() {
+  [ -s "$POOL_FILE" ] || return 1
+  line="$(head -n 1 "$POOL_FILE")"
+  code="$(printf '%s' "$line" | cut -d'|' -f1)"
+  mins="$(printf '%s' "$line" | cut -d'|' -f2)"
+  amt="$(printf '%s' "$line" | cut -d'|' -f3)"
+  exp="$(printf '%s' "$line" | cut -d'|' -f4)"
+  [ -n "$code" ] && safe_code "$code" || return 1
+  sed -i '1d' "$POOL_FILE"
+  queue_sale "$deviceId" "${amt:-$amount}" "$code"
+  log_debug "esp_pool_code deviceId=$deviceId amount=${amt:-$amount} code=$code"
+  print_json "$(printf '{"ok":true,"mode":"voucher_pool","code":"%s","minutes":%s,"amount":%s,"expiresAt":"%s","offline":true}' "$code" "${mins:-0}" "${amt:-$amount}" "$exp")"
+  exit 0
+}
+
+cloud_create_code() {
+  [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ] || return 1
+  BASE="$(tr -d '\r\n' < "$BASE_FILE")"
+  RID="$(tr -d '\r\n' < "$RID_FILE")"
+  APIKEY="$(tr -d '\r\n' < "$APIKEY_FILE")"
+  payload="$(printf '{"amount":%s,"deviceId":"%s"}' "$amount" "$deviceId")"
+  resp="$(curl -sS --connect-timeout 3 -m 8 -X POST "$BASE/api/router/vouchers/create" \
+    -H "Authorization: Bearer $APIKEY" \
+    -H "X-Router-ID: $RID" \
+    -H "Content-Type: application/json" \
+    -d "$payload" 2>/dev/null || true)"
+  printf '%s' "$resp" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || return 1
+  code="$(json_get_string code "$resp")"
+  mins="$(json_get_number minutes "$resp")"
+  amt="$(json_get_number amount "$resp")"
+  exp="$(json_get_string expiresAt "$resp")"
+  [ -n "$code" ] && safe_code "$code" || return 1
+  log_debug "esp_cloud_code deviceId=$deviceId amount=${amt:-$amount} code=$code"
+  print_json "$(printf '{"ok":true,"mode":"voucher_cloud","code":"%s","minutes":%s,"amount":%s,"expiresAt":"%s"}' "$code" "${mins:-0}" "${amt:-$amount}" "$exp")"
+  exit 0
+}
+
+amount=""
+deviceId="vendo-1"
+targetIp=""
+targetMac=""
+
+IFS='&'
+for pair in ${QUERY_STRING:-}; do
+  key="${pair%%=*}"
+  val="${pair#*=}"
+  [ "$key" = "$pair" ] && val=""
+  val="$(urldecode "$val")"
+  case "$key" in
+    amount) amount="$val" ;;
+    deviceId) deviceId="$val" ;;
+    clientIp|clientip|ip) targetIp="$val" ;;
+    clientMac|clientmac|macHint|mac) targetMac="$val" ;;
+  esac
+done
+unset IFS
+
+requestIp="${REMOTE_ADDR:-unknown}"
+
+if [ -z "$amount" ] || ! is_uint "$amount"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"amount must be numeric"}'
+  exit 0
+fi
+if ! safe_token "$deviceId"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid deviceId"}'
+  exit 0
+fi
+if [ -n "$targetIp" ] && ! safe_ip "$targetIp"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid clientIp"}'
+  exit 0
+fi
+if [ -n "$targetMac" ] && ! safe_mac "$targetMac"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid clientMac"}'
+  exit 0
+fi
+
+retry_after=""
+if ! retry_after="$(rate_limit_check "$requestIp")"; then
+  print_status_json 429 "Too Many Requests" "{\"ok\":false,\"error\":\"Rate limit exceeded\",\"retryAfterSeconds\":${retry_after}}"
+  exit 0
+fi
+
+if [ -z "$targetIp" ] && [ -n "$targetMac" ]; then
+  targetIp="$(resolve_ip_from_mac "$targetMac")"
+fi
+
+if [ -z "$targetIp" ]; then
+  single="$(single_opennds_client 2>/dev/null || true)"
+  if [ -n "$single" ]; then
+    targetIp="$(printf '%s' "$single" | cut -d'|' -f1)"
+    [ -z "$targetMac" ] && targetMac="$(printf '%s' "$single" | cut -d'|' -f2)"
+  fi
+fi
+
+if [ -n "$targetIp" ] && [ -z "$targetMac" ]; then
+  targetMac="$(resolve_mac_from_ip "$targetIp")"
+fi
+
+minutes="$(rate_minutes_for_amount "$amount")"
+down="$(rate_kbps_for_amount "$amount" downloadKbps)"
+up="$(rate_kbps_for_amount "$amount" uploadKbps)"
+dq="$(rate_quota_for_amount "$amount" downloadQuotaKB)"
+uq="$(rate_quota_for_amount "$amount" uploadQuotaKB)"
+
+if [ -n "$targetIp" ] && command -v ndsctl >/dev/null 2>&1; then
+  saleCode="COIN-$(date +%s)-$amount"
+  if nds_out="$(auth_client "$targetIp" "$minutes" "$up" "$down" "$uq" "$dq" "icxifi|coin|device=$deviceId|amount=$amount|code=$saleCode")"; then
+    queue_sale "$deviceId" "$amount" "$saleCode"
+    store_session "$targetIp" "$targetMac" "$minutes" "$down" "$up"
+    log_debug "esp_local_grant deviceId=$deviceId amount=$amount ip=$targetIp mac=$targetMac mins=$minutes code=$saleCode"
+    print_json "$(printf '{"ok":true,"mode":"coin_local","offline":true,"synced":false,"code":"%s","grant":{"minutes":%s,"downloadKbps":%s,"uploadKbps":%s},"client":{"ip":"%s","mac":"%s"}}' "$saleCode" "$minutes" "$down" "$up" "$targetIp" "$targetMac")"
+    exit 0
+  fi
+  log_debug "esp_local_auth_failed deviceId=$deviceId amount=$amount ip=$targetIp nds=$(printf '%s' "$nds_out" | tr '\n' ' ' | cut -c1-180)"
+fi
+
+# No unique target client: vend a local voucher code for the customer to enter.
+vend_pool_code || true
+cloud_create_code || true
+
+print_status_json 409 "Conflict" '{"ok":false,"error":"No target client and no voucher pool available"}'
+log_debug "esp_no_target_no_pool requestIp=$requestIp deviceId=$deviceId amount=$amount"
+exit 0

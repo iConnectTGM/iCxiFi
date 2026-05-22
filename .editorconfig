@@ -1,0 +1,10 @@
+# iCxiFi — enforce LF for router scripts (required for OpenWrt deploy)
+root = true
+
+[*.sh]
+end_of_line = lf
+charset = utf-8
+
+[router/**/*]
+end_of_line = lf
+charset = utf-8

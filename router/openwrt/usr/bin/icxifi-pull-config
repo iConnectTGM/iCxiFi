@@ -1,0 +1,41 @@
+#!/bin/sh
+
+set -eu
+
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
+
+if [ -z "$BASE" ] || [ -z "$RID" ] || [ -z "$APIKEY" ]; then
+  exit 1
+fi
+
+TMP="/tmp/icxifi_profile_cache.$$"
+OUT="/etc/icxifi/profile_cache.json"
+
+RESP="$(curl -sS -m 15 -X GET "$BASE/api/router/config" \
+  -H "Authorization: Bearer $APIKEY" \
+  -H "X-Router-ID: $RID" \
+  -H "ngrok-skip-browser-warning: true")" || exit 1
+
+echo "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || exit 1
+
+mkdir -p /etc/icxifi
+printf '%s' "$RESP" > "$TMP"
+mv "$TMP" "$OUT"
+
+# Sync license key from cloud to router (for activated.html display)
+LIC="$(echo "$RESP" | sed -n 's/.*"licenseKey"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null || true)"
+if [ -n "$LIC" ]; then
+  printf '%s' "$LIC" > /etc/icxifi/license_key 2>/dev/null || true
+  chmod 600 /etc/icxifi/license_key 2>/dev/null || true
+  chown root:root /etc/icxifi/license_key 2>/dev/null || true
+fi
+
+# Phase 3: apply config (status, commands, etc.)
+[ -x /usr/bin/icxifi-apply-config ] && /usr/bin/icxifi-apply-config || true
+
+# Phase 5: sync pending offline sales, replenish voucher pool
+[ -x /usr/bin/icxifi-sync-pending ] && /usr/bin/icxifi-sync-pending || true
+[ -x /usr/bin/icxifi-replenish-pool ] && /usr/bin/icxifi-replenish-pool || true
+

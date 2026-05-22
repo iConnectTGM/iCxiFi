@@ -1,0 +1,126 @@
+#!/bin/sh
+#
+# Phase 3: Apply config from profile_cache.json to runtime.
+# - status disabled -> touch /etc/icxifi/suspended
+# - status active   -> rm -f /etc/icxifi/suspended
+# - portal.theme    -> (future) switch theme
+# - commands        -> execute and ack to cloud
+#
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+CONFIG_FILE="/etc/icxifi/profile_cache.json"
+SUSPENDED_FILE="/etc/icxifi/suspended"
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
+
+if [ ! -s "$CONFIG_FILE" ]; then
+  exit 0
+fi
+
+# Status: create/remove suspended marker
+status="$(jsonfilter -i "$CONFIG_FILE" -e '@.status' 2>/dev/null || true)"
+if [ "$status" = "disabled" ] || [ "$status" = "revoked" ]; then
+  touch "$SUSPENDED_FILE"
+else
+  rm -f "$SUSPENDED_FILE"
+fi
+
+# Hotspot SSID: supports single SSID or separated 2.4G/5G SSID.
+hotspot_ssid="$(jsonfilter -i "$CONFIG_FILE" -e '@.hotspot.ssid' 2>/dev/null || true)"
+hotspot_split="$(jsonfilter -i "$CONFIG_FILE" -e '@.hotspot.separateBands' 2>/dev/null || true)"
+hotspot_ssid24="$(jsonfilter -i "$CONFIG_FILE" -e '@.hotspot.ssid24' 2>/dev/null || true)"
+hotspot_ssid5="$(jsonfilter -i "$CONFIG_FILE" -e '@.hotspot.ssid5' 2>/dev/null || true)"
+
+split_enabled=0
+case "$hotspot_split" in
+  true|1|yes|on) split_enabled=1 ;;
+esac
+
+if [ -n "$hotspot_ssid" ] || [ "$split_enabled" = "1" ]; then
+  changed=0
+  for sec in $(uci show wireless 2>/dev/null | sed -n 's/^wireless\.\([^=]*\)=wifi-iface$/\1/p'); do
+    mode="$(uci -q get wireless."$sec".mode 2>/dev/null || true)"
+    [ "$mode" = "ap" ] || continue
+    # Keep management SSID stable (do not overwrite from hotspot profile):
+    # - section name icxifi_mgmt
+    # - explicit per-iface flag: option icxifi_skip_ssid_sync '1'
+    [ "$sec" = "icxifi_mgmt" ] && continue
+    skip_sync="$(uci -q get wireless."$sec".icxifi_skip_ssid_sync 2>/dev/null || true)"
+    case "$skip_sync" in
+      1|true|yes|on) continue ;;
+    esac
+
+    target_ssid="$hotspot_ssid"
+    if [ "$split_enabled" = "1" ]; then
+      dev="$(uci -q get wireless."$sec".device 2>/dev/null || true)"
+      band="$(uci -q get wireless."$dev".band 2>/dev/null || true)"
+      case "$band" in
+        *2g*) target_ssid="${hotspot_ssid24:-$hotspot_ssid}" ;;
+        *5g*|*6g*) target_ssid="${hotspot_ssid5:-$hotspot_ssid}" ;;
+      esac
+    fi
+
+    [ -n "$target_ssid" ] || continue
+    current_ssid="$(uci -q get wireless."$sec".ssid 2>/dev/null || true)"
+    if [ "$current_ssid" != "$target_ssid" ]; then
+      uci set wireless."$sec".ssid="$target_ssid" 2>/dev/null || true
+      changed=1
+    fi
+  done
+  if [ "$changed" = "1" ]; then
+    uci commit wireless 2>/dev/null || true
+    wifi reload 2>/dev/null || true
+    if [ "$split_enabled" = "1" ]; then
+      logger -t icxifi "Applied split hotspot SSID (2.4G/5G)"
+    else
+      logger -t icxifi "Applied hotspot SSID to all AP ifaces: ${hotspot_ssid}"
+    fi
+  fi
+fi
+
+# Commands: execute and ack
+acked=""
+i=0
+while true; do
+  id="$(jsonfilter -i "$CONFIG_FILE" -e "@.commands[$i].id" 2>/dev/null || true)"
+  type="$(jsonfilter -i "$CONFIG_FILE" -e "@.commands[$i].type" 2>/dev/null || true)"
+  [ -n "$id" ] || break
+
+  case "$type" in
+    restart_opennds)
+      /etc/init.d/opennds restart 2>/dev/null || true
+      ;;
+    restart_wireless)
+      wifi reload 2>/dev/null || true
+      ;;
+    pull_config)
+      [ -x /usr/bin/icxifi-pull-config ] && /usr/bin/icxifi-pull-config 2>/dev/null || true
+      ;;
+    rotate_key)
+      # Signal: user should re-activate; we don't rotate keys from router
+      logger -t icxifi "rotate_key commanded - manual re-activation required"
+      ;;
+    *)
+      logger -t icxifi "Unknown command type: $type"
+      ;;
+  esac
+
+  acked="${acked}${acked:+,}$id"
+  i=$((i + 1))
+done
+
+# Ack executed commands to cloud
+if [ -n "$acked" ] && [ -n "$BASE" ] && [ -n "$RID" ] && [ -n "$APIKEY" ]; then
+  ids="$(echo "$acked" | tr ',' '\n' | while read -r x; do printf '"%s",' "$x"; done | sed 's/,$//')"
+  payload="{\"ids\":[$ids]}"
+  curl -sS -m 15 -X POST "$BASE/api/router/commands/ack" \
+    -H "ngrok-skip-browser-warning: true" \
+    -H "Authorization: Bearer $APIKEY" \
+    -H "X-Router-ID: $RID" \
+    -H "Content-Type: application/json" \
+    -d "$payload" >/dev/null || true
+fi
+
+exit 0

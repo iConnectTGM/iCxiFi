@@ -1,0 +1,21 @@
+#!/bin/sh
+# Fast captive portal entry point.
+# Do not call the cloud here; render the local portal immediately and let
+# portal JavaScript perform activation/profile checks after first paint.
+set -eu
+
+GW="$(cat /etc/icxifi/gateway_ip 2>/dev/null | tr -d '\r\n' | cut -d/ -f1)"
+GW="${GW:-10.0.0.1}"
+QS="${QUERY_STRING:+?$QUERY_STRING}"
+
+case "${QUERY_STRING:-}" in
+  *setup=1*|*setup=true*)
+    TARGET="http://${GW}:2080/register.html${QS}"
+    ;;
+  *)
+    TARGET="http://${GW}:2080/portal.html${QS}"
+    ;;
+esac
+
+printf 'Status: 302 Found\r\nLocation: %s\r\nCache-Control: no-store\r\nContent-Type: text/html\r\n\r\n' "$TARGET"
+printf '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=%s"></head><body>Redirecting...</body></html>' "$TARGET"

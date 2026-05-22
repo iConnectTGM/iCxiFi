@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iCxiFi | Activated</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Rajdhani:wght@500;600;700&display=swap");
+
+:root {
+  --bg: #030407;
+  --bg2: #090b10;
+  --panel: #10141a;
+  --panel2: #0c1015;
+  --line: rgba(255, 255, 255, 0.18);
+  --line-strong: rgba(190, 220, 255, 0.34);
+  --text: #f3f7fb;
+  --muted: #a3aebc;
+  --title: #f6f9fd;
+  --ok: #a7ecc8;
+  --bad: #ff9a9a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "Rajdhani", "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 700px at 85% 0%, rgba(180, 210, 255, 0.14), rgba(0, 0, 0, 0) 55%),
+    radial-gradient(900px 600px at 10% 100%, rgba(160, 200, 255, 0.08), rgba(0, 0, 0, 0) 60%),
+    linear-gradient(165deg, #06080c 0%, #04060a 55%, #030407 100%);
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 2vw, 24px);
+}
+
+.page {
+  width: clamp(320px, 92vw, 560px);
+  margin: 0 auto;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.2)),
+    linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  padding: clamp(14px, 2.6vw, 22px);
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, rgba(225, 235, 248, 0.08), rgba(143, 207, 255, 0.08) 52%, rgba(255, 255, 255, 0.02));
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.brand {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  position: relative;
+}
+
+.brand-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand img {
+  width: min(260px, 78vw);
+  max-width: 100%;
+  height: auto;
+  opacity: 0.96;
+  border-radius: 14px;
+}
+
+.node-pill {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f8fd;
+  padding: 6px 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+h1 {
+  margin: 0;
+  font-family: "Orbitron", "Rajdhani", sans-serif;
+  color: var(--title);
+  font-size: clamp(24px, 4vw, 30px);
+  letter-spacing: 0.5px;
+}
+
+.subtitle {
+  margin: 8px 0 14px;
+  color: var(--muted);
+  font-size: 20px;
+}
+
+.status {
+  border: 1px solid rgba(167, 236, 200, 0.42);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(0, 0, 0, 0.26)),
+    rgba(7, 13, 22, 0.84);
+  padding: 12px;
+  color: var(--ok);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.meta {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.small-note {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.error {
+  color: var(--bad);
+  border-color: rgba(255, 154, 154, 0.42);
+}
+
+@media (max-width: 480px) {
+  .brand {
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .node-pill {
+    position: static;
+    transform: none;
+  }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <section class="panel">
+    <header class="brand">
+      <div class="brand-main">
+        <img src="./logo.png" alt="iCxiFi" />
+      </div>
+      <div class="node-pill">Activated</div>
+    </header>
+
+    <h1>Router Activated</h1>
+    <p class="subtitle">This router is already linked to iCxiFi Cloud.</p>
+
+    <div class="status" id="activationText">Status: Activated</div>
+    <p class="meta" id="meta">Router ID: ...</p>
+    <p class="meta" id="licenseMeta" style="display:none">License: <span id="licenseKey"></span></p>
+    <p class="small-note">Bind page access is disabled for this router.</p>
+  </section>
+</main>
+
+<script>
+const metaEl = document.getElementById("meta");
+const activationTextEl = document.getElementById("activationText");
+
+async function getJson(url, options = {}) {
+  const response = await fetch(url, { cache: "no-store", ...options });
+  const raw = await response.text();
+  let data = {};
+
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error("Invalid API response.");
+    }
+  }
+
+  if (!response.ok) {
+    const apiError = typeof data.error === "string" ? data.error : "HTTP " + response.status;
+    throw new Error(apiError);
+  }
+
+  return data;
+}
+
+(async function init() {
+  try {
+    const data = await getJson("/cgi-bin/icxifi/activation");
+    metaEl.textContent = "Router ID: " + (data.routerId || "unknown");
+    if (data.licenseKey) {
+      document.getElementById("licenseMeta").style.display = "block";
+      document.getElementById("licenseKey").textContent = data.licenseKey;
+    }
+    if (!data.activated) {
+      activationTextEl.textContent = "Status: Not activated";
+      activationTextEl.classList.add("error");
+    }
+  } catch (error) {
+    activationTextEl.textContent = "Status: " + error.message;
+    activationTextEl.classList.add("error");
+  }
+})();
+</script>
+</body>
+</html>

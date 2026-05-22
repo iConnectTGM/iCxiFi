@@ -1,0 +1,29 @@
+#!/bin/sh
+
+set -eu
+
+OUT_DIR="/etc/icxifi"
+OUT_FILE="$OUT_DIR/router_id"
+
+mkdir -p "$OUT_DIR"
+
+if [ -s "$OUT_FILE" ]; then
+  exit 0
+fi
+
+find_mac() {
+  ip -o link show br-lan 2>/dev/null | awk '/link\/ether/ {print $17; exit}'
+}
+
+MAC="$(find_mac)"
+
+if [ -z "$MAC" ]; then
+  MAC="$(ip -o link show eth0 2>/dev/null | awk '/link\/ether/ {print $17; exit}')"
+fi
+
+if [ -z "$MAC" ]; then
+  exit 1
+fi
+
+printf '%s\n' "$MAC" > "$OUT_FILE"
+

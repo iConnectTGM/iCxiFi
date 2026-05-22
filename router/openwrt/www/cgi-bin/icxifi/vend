@@ -1,0 +1,594 @@
+#!/bin/sh
+
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+LOG_FILE="/tmp/icxifi_auth_debug.log"
+LOG_MAX_BYTES=262144
+RL_WINDOW_SECONDS=10
+RL_MAX_REQUESTS="${ICXIFI_RL_MAX_REQUESTS:-8}"
+
+BASE_FILE="/etc/icxifi/cloud_base_url"
+RID_FILE="/etc/icxifi/router_id"
+APIKEY_FILE="/etc/icxifi/router_api_key"
+PROFILE_FILE="/etc/icxifi/profile_cache.json"
+SPEED_FACTOR_FILE="/etc/icxifi/speed_factor_percent"
+
+print_json() {
+  printf 'Content-Type: application/json\r\n\r\n%s\n' "$1"
+}
+
+print_status_json() {
+  code="$1"
+  reason="$2"
+  body="$3"
+  printf 'Status: %s %s\r\nContent-Type: application/json\r\n\r\n%s\n' "$code" "$reason" "$body"
+}
+
+rotate_log() {
+  if [ -f "$LOG_FILE" ]; then
+    size="$(wc -c < "$LOG_FILE" 2>/dev/null || echo 0)"
+    case "$size" in
+      ''|*[!0-9]*) size=0 ;;
+    esac
+    if [ "$size" -gt "$LOG_MAX_BYTES" ]; then
+      mv -f "$LOG_FILE" "${LOG_FILE}.1" 2>/dev/null || true
+      : > "$LOG_FILE"
+    fi
+  fi
+}
+
+log_debug() {
+  rotate_log
+  ts="$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || date)"
+  printf '%s %s\n' "$ts" "$*" >> "$LOG_FILE"
+}
+
+urldecode() {
+  value="${1//+/ }"
+  printf '%b' "${value//%/\\x}"
+}
+
+is_uint() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+read_legacy_speed_factor() {
+  factor=100
+  if [ -s "$SPEED_FACTOR_FILE" ]; then
+    raw="$(tr -d '\r\n' < "$SPEED_FACTOR_FILE" 2>/dev/null || true)"
+    if is_uint "$raw" && [ "$raw" -ge 50 ] && [ "$raw" -le 150 ]; then
+      factor="$raw"
+    fi
+  fi
+  printf '%s' "$factor"
+}
+
+read_profile_speed_factor() {
+  key="$1"
+  fallback="$2"
+  out=""
+
+  if [ -s "$PROFILE_FILE" ] && command -v jsonfilter >/dev/null 2>&1; then
+    out="$(jsonfilter -i "$PROFILE_FILE" -e "@.profile.speedCalibration.${key}" 2>/dev/null | head -n 1 || true)"
+  fi
+
+  if ! is_uint "$out" || [ "$out" -lt 50 ] || [ "$out" -gt 150 ]; then
+    out="$fallback"
+  fi
+  printf '%s' "$out"
+}
+
+apply_speed_factor() {
+  kbps="$1"
+  factor="$2"
+  if ! is_uint "$kbps"; then
+    kbps=0
+  fi
+  if ! is_uint "$factor"; then
+    factor=100
+  fi
+  if [ "$kbps" -le 0 ]; then
+    printf '0'
+    return 0
+  fi
+  adjusted=$((kbps * factor / 100))
+  if [ "$adjusted" -lt 1 ]; then
+    adjusted=1
+  fi
+  printf '%s' "$adjusted"
+}
+
+safe_token() {
+  case "$1" in
+    ''|*[!A-Za-z0-9._:-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+safe_mac() {
+  case "$1" in
+    ''|*[!A-Fa-f0-9:-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+safe_code() {
+  # Backward compatible:
+  # - legacy: ICXF-XXXXXXXX
+  # - current: XXXXXXXXX (alphanumeric only)
+  printf '%s' "$1" | grep -Eq '^(ICXF-)?[A-Z0-9]{4,32}$'
+}
+
+json_get_string() {
+  key="$1"
+  json="$2"
+  printf '%s' "$json" | tr -d '\r\n' | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n 1
+}
+
+json_get_number() {
+  key="$1"
+  json="$2"
+  printf '%s' "$json" | tr -d '\r\n' | sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" | head -n 1
+}
+
+require_file() {
+  path="$1"
+  [ -s "$path" ]
+}
+
+check_api_key_permissions() {
+  perm="$(stat -c '%a' "$APIKEY_FILE" 2>/dev/null || true)"
+  uid="$(stat -c '%u' "$APIKEY_FILE" 2>/dev/null || true)"
+
+  if [ -n "$perm" ] && [ -n "$uid" ]; then
+    [ "$perm" = "600" ] || return 1
+    [ "$uid" = "0" ] || return 1
+    return 0
+  fi
+
+  # Fallback when stat format differs.
+  ls_line="$(ls -ln "$APIKEY_FILE" 2>/dev/null || true)"
+  mode="$(printf '%s' "$ls_line" | awk '{print $1}')"
+  owner_uid="$(printf '%s' "$ls_line" | awk '{print $3}')"
+  [ "$mode" = "-rw-------" ] || return 1
+  [ "$owner_uid" = "0" ] || return 1
+}
+
+rate_limit_check() {
+  ip="$1"
+  key="$(printf '%s' "$ip" | tr -c 'A-Za-z0-9._-' '_')"
+  file="/tmp/icxifi_rl_${key}"
+  now="$(date +%s)"
+  start="$now"
+  count=0
+
+  if [ -s "$file" ]; then
+    line="$(cat "$file" 2>/dev/null || true)"
+    old_start="$(printf '%s' "$line" | awk '{print $1}')"
+    old_count="$(printf '%s' "$line" | awk '{print $2}')"
+    if is_uint "$old_start" && is_uint "$old_count"; then
+      if [ $((now - old_start)) -lt "$RL_WINDOW_SECONDS" ]; then
+        start="$old_start"
+        count="$old_count"
+      fi
+    fi
+  fi
+
+  count=$((count + 1))
+  printf '%s %s\n' "$start" "$count" > "$file"
+
+  if [ "$count" -gt "$RL_MAX_REQUESTS" ]; then
+    retry_after=$((RL_WINDOW_SECONDS - (now - start)))
+    if [ "$retry_after" -lt 1 ]; then
+      retry_after=1
+    fi
+    printf '%s' "$retry_after"
+    return 1
+  fi
+
+  return 0
+}
+
+profile_rate_field() {
+  amount="$1"
+  minutes="$2"
+  field="$3"
+  out=""
+
+  if [ ! -s "$PROFILE_FILE" ]; then
+    return 0
+  fi
+
+  if command -v jsonfilter >/dev/null 2>&1; then
+    if is_uint "$amount" && is_uint "$minutes"; then
+      out="$(jsonfilter -i "$PROFILE_FILE" -e "@.profile.rates[@.amount=${amount}&&@.minutes=${minutes}].${field}" 2>/dev/null | head -n 1 || true)"
+    fi
+    if [ -z "$out" ] && is_uint "$amount"; then
+      out="$(jsonfilter -i "$PROFILE_FILE" -e "@.profile.rates[@.amount=${amount}].${field}" 2>/dev/null | head -n 1 || true)"
+    fi
+  fi
+
+  if [ -z "$out" ]; then
+    compact="$(tr -d '\r\n\t ' < "$PROFILE_FILE" 2>/dev/null || true)"
+    if [ -n "$compact" ] && is_uint "$amount" && is_uint "$minutes"; then
+      out="$(printf '%s' "$compact" | sed -n "s/.*\"amount\":${amount},\"minutes\":${minutes}[^}]*\"${field}\":\([0-9][0-9]*\).*/\1/p" | head -n 1)"
+    fi
+    if [ -z "$out" ] && [ -n "$compact" ] && is_uint "$amount"; then
+      out="$(printf '%s' "$compact" | sed -n "s/.*\"amount\":${amount}[^}]*\"${field}\":\([0-9][0-9]*\).*/\1/p" | head -n 1)"
+    fi
+  fi
+
+  printf '%s' "$out"
+}
+
+nds_client_info() {
+  ip="$1"
+  token=""
+  remaining_minutes=0
+  is_authed=0
+
+  if ! command -v ndsctl >/dev/null 2>&1; then
+    printf '%s|%s|%s\n' "$token" "$remaining_minutes" "$is_authed"
+    return 0
+  fi
+
+  nds_json="$(ndsctl json 2>/dev/null || true)"
+  if [ -z "$nds_json" ]; then
+    printf '%s|%s|%s\n' "$token" "$remaining_minutes" "$is_authed"
+    return 0
+  fi
+
+  one="$(printf '%s' "$nds_json" | tr -d '\r\n')"
+  obj="$(printf '%s\n' "$one" | sed 's/},{/}\n{/g' | grep -F -m 1 "\"ip\":\"$ip\"" || true)"
+
+  if [ -n "$obj" ]; then
+    token="$(printf '%s' "$obj" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' | head -n 1)"
+
+    if printf '%s' "$obj" | grep -Eq '"(state|client_state)":"Authenticated"|"authenticated":true'; then
+      is_authed=1
+    fi
+
+    rem_secs="$(printf '%s' "$obj" | sed -n 's/.*"session_remaining":\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+    if is_uint "$rem_secs" && [ "$rem_secs" -gt 0 ]; then
+      remaining_minutes=$(((rem_secs + 59) / 60))
+    fi
+
+    if [ "$remaining_minutes" -eq 0 ]; then
+      now="$(date +%s)"
+      end_epoch="$(printf '%s' "$obj" | sed -n 's/.*"session_end":\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+      if is_uint "$end_epoch" && [ "$end_epoch" -gt "$now" ]; then
+        remaining_minutes=$((((end_epoch - now) + 59) / 60))
+      fi
+    fi
+  fi
+
+  printf '%s|%s|%s\n' "$token" "$remaining_minutes" "$is_authed"
+}
+
+amount=""
+minutes=""
+deviceId="vendo-1"
+macHint=""
+
+IFS='&'
+for pair in ${QUERY_STRING:-}; do
+  key="${pair%%=*}"
+  val="${pair#*=}"
+  [ "$key" = "$pair" ] && val=""
+  val="$(urldecode "$val")"
+  case "$key" in
+    amount) amount="$val" ;;
+    minutes) minutes="$val" ;;
+    deviceId) deviceId="$val" ;;
+    macHint) macHint="$val" ;;
+    clientMac) macHint="$val" ;;
+  esac
+done
+unset IFS
+
+clientIp="${REMOTE_ADDR:-}"
+if [ -z "$clientIp" ]; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Missing client IP"}'
+  exit 0
+fi
+
+if [ -n "$amount" ] && ! is_uint "$amount"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"amount must be numeric"}'
+  exit 0
+fi
+if [ -n "$minutes" ] && ! is_uint "$minutes"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"minutes must be numeric"}'
+  exit 0
+fi
+if [ -z "$amount" ] && [ -z "$minutes" ]; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"amount or minutes is required"}'
+  exit 0
+fi
+
+if ! safe_token "$deviceId"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid deviceId"}'
+  exit 0
+fi
+
+if [ -n "$macHint" ] && ! safe_mac "$macHint"; then
+  print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid macHint"}'
+  exit 0
+fi
+
+retry_after=""
+if ! retry_after="$(rate_limit_check "$clientIp")"; then
+  print_status_json 429 "Too Many Requests" "{\"ok\":false,\"error\":\"Rate limit exceeded\",\"retryAfterSeconds\":${retry_after}}"
+  log_debug "rate_limit ip=$clientIp retryAfter=$retry_after"
+  exit 0
+fi
+
+if ! require_file "$BASE_FILE" || ! require_file "$RID_FILE" || ! require_file "$APIKEY_FILE"; then
+  print_status_json 500 "Internal Server Error" '{"ok":false,"error":"Missing router cloud credentials"}'
+  log_debug "credential_missing ip=$clientIp"
+  exit 0
+fi
+
+if ! check_api_key_permissions; then
+  print_status_json 500 "Internal Server Error" '{"ok":false,"error":"Invalid router_api_key permissions"}'
+  log_debug "bad_permissions file=$APIKEY_FILE"
+  exit 0
+fi
+
+BASE="$(tr -d '\r\n' < "$BASE_FILE")"
+RID="$(tr -d '\r\n' < "$RID_FILE")"
+APIKEY="$(tr -d '\r\n' < "$APIKEY_FILE")"
+
+case "$BASE" in
+  http://*|https://*) ;;
+  *)
+    print_status_json 500 "Internal Server Error" '{"ok":false,"error":"Invalid cloud_base_url"}'
+    exit 0
+    ;;
+esac
+
+direct_mode=0
+resp_grant=""
+resp_create=""
+resp_redeem=""
+grant_remaining=""
+grant_minutes=""
+grant_down=""
+grant_up=""
+grant_up_quota=""
+grant_down_quota=""
+voucher_code=""
+voucher_minutes=0
+voucher_amount=0
+voucher_status="redeemed"
+
+if [ -n "$amount" ]; then
+  payload_grant="$(printf '{"amount":%s,"deviceId":"%s","client":{"ip":"%s","mac":"%s"}}' "$amount" "$deviceId" "$clientIp" "$macHint")"
+else
+  payload_grant="$(printf '{"minutes":%s,"deviceId":"%s","client":{"ip":"%s","mac":"%s"}}' "$minutes" "$deviceId" "$clientIp" "$macHint")"
+fi
+
+resp_grant="$(curl -sS --connect-timeout 5 -m 20 -X POST "$BASE/api/router/grants/topup" \
+  -H "Authorization: Bearer $APIKEY" \
+  -H "X-Router-ID: $RID" \
+  -H "Content-Type: application/json" \
+  -d "$payload_grant" 2>/dev/null || true)"
+
+if printf '%s' "$resp_grant" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+  direct_mode=1
+  grant_minutes="$(json_get_number minutes "$resp_grant")"
+  grant_remaining="$(json_get_number remainingSeconds "$resp_grant")"
+  grant_down="$(json_get_number downloadKbps "$resp_grant")"
+  grant_up="$(json_get_number uploadKbps "$resp_grant")"
+  grant_up_quota="$(json_get_number uploadQuotaKB "$resp_grant")"
+  grant_down_quota="$(json_get_number downloadQuotaKB "$resp_grant")"
+  voucher_amount="$(json_get_number amount "$resp_grant")"
+  voucher_code="DIRECT"
+  voucher_status="active"
+  if [ -z "$voucher_amount" ] || ! is_uint "$voucher_amount"; then
+    voucher_amount="${amount:-0}"
+  fi
+  log_debug "grant_topup_ok ip=$clientIp mode=direct amount=${voucher_amount:-0}"
+else
+  if [ -n "$amount" ]; then
+    if [ -n "$macHint" ]; then
+      payload_create="$(printf '{"amount":%s,"deviceId":"%s","clientHint":{"mac":"%s"}}' "$amount" "$deviceId" "$macHint")"
+    else
+      payload_create="$(printf '{"amount":%s,"deviceId":"%s"}' "$amount" "$deviceId")"
+    fi
+  else
+    if [ -n "$macHint" ]; then
+      payload_create="$(printf '{"minutes":%s,"deviceId":"%s","clientHint":{"mac":"%s"}}' "$minutes" "$deviceId" "$macHint")"
+    else
+      payload_create="$(printf '{"minutes":%s,"deviceId":"%s"}' "$minutes" "$deviceId")"
+    fi
+  fi
+
+  resp_create="$(curl -sS --connect-timeout 5 -m 20 -X POST "$BASE/api/router/vouchers/create" \
+    -H "Authorization: Bearer $APIKEY" \
+    -H "X-Router-ID: $RID" \
+    -H "Content-Type: application/json" \
+    -d "$payload_create" 2>/dev/null || true)"
+
+  if [ -z "$resp_create" ]; then
+    print_status_json 502 "Bad Gateway" '{"ok":false,"error":"Cloud unavailable"}'
+    log_debug "create_failed ip=$clientIp reason=empty_response"
+    exit 0
+  fi
+
+  if ! printf '%s' "$resp_create" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+    print_json "$resp_create"
+    log_debug "create_rejected ip=$clientIp"
+    exit 0
+  fi
+
+  voucher_code="$(json_get_string code "$resp_create")"
+  voucher_minutes="$(json_get_number minutes "$resp_create")"
+  voucher_amount="$(json_get_number amount "$resp_create")"
+
+  if [ -z "$voucher_code" ] || ! safe_code "$voucher_code"; then
+    print_status_json 502 "Bad Gateway" '{"ok":false,"error":"Invalid voucher code from cloud"}'
+    log_debug "create_bad_code ip=$clientIp"
+    exit 0
+  fi
+
+  if [ -z "$voucher_minutes" ] || ! is_uint "$voucher_minutes"; then
+    voucher_minutes=0
+  fi
+  if [ -z "$voucher_amount" ] || ! is_uint "$voucher_amount"; then
+    voucher_amount=0
+  fi
+
+  payload_redeem="$(printf '{"code":"%s","client":{"ip":"%s","mac":"%s"}}' "$voucher_code" "$clientIp" "$macHint")"
+
+  resp_redeem="$(curl -sS --connect-timeout 5 -m 20 -X POST "$BASE/api/router/vouchers/redeem" \
+    -H "Authorization: Bearer $APIKEY" \
+    -H "X-Router-ID: $RID" \
+    -H "Content-Type: application/json" \
+    -d "$payload_redeem" 2>/dev/null || true)"
+
+  if [ -z "$resp_redeem" ]; then
+    print_status_json 502 "Bad Gateway" '{"ok":false,"error":"Cloud unavailable"}'
+    log_debug "redeem_failed ip=$clientIp code=$voucher_code reason=empty_response"
+    exit 0
+  fi
+
+  if ! printf '%s' "$resp_redeem" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+    print_json "$resp_redeem"
+    log_debug "redeem_rejected ip=$clientIp code=$voucher_code"
+    exit 0
+  fi
+
+  grant_minutes="$(json_get_number minutes "$resp_redeem")"
+  grant_down="$(json_get_number downloadKbps "$resp_redeem")"
+  grant_up="$(json_get_number uploadKbps "$resp_redeem")"
+  grant_up_quota="$(json_get_number uploadQuotaKB "$resp_redeem")"
+  grant_down_quota="$(json_get_number downloadQuotaKB "$resp_redeem")"
+
+  if [ -z "$grant_minutes" ] || ! is_uint "$grant_minutes"; then
+    grant_minutes="$voucher_minutes"
+  fi
+fi
+
+if [ "$direct_mode" = "1" ] && [ -n "$grant_remaining" ] && is_uint "$grant_remaining"; then
+  grant_minutes=$(( (grant_remaining + 59) / 60 ))
+fi
+if [ -z "$grant_minutes" ] || ! is_uint "$grant_minutes" || [ "$grant_minutes" -lt 1 ]; then
+  grant_minutes=1
+fi
+
+if [ -z "$grant_down" ] || ! is_uint "$grant_down"; then
+  grant_down="$(profile_rate_field "$voucher_amount" "$grant_minutes" downloadKbps)"
+fi
+if [ -z "$grant_up" ] || ! is_uint "$grant_up"; then
+  grant_up="$(profile_rate_field "$voucher_amount" "$grant_minutes" uploadKbps)"
+fi
+if [ -z "$grant_up_quota" ] || ! is_uint "$grant_up_quota"; then
+  grant_up_quota="$(profile_rate_field "$voucher_amount" "$grant_minutes" uploadQuotaKB)"
+fi
+if [ -z "$grant_down_quota" ] || ! is_uint "$grant_down_quota"; then
+  grant_down_quota="$(profile_rate_field "$voucher_amount" "$grant_minutes" downloadQuotaKB)"
+fi
+
+if [ -z "$grant_down" ] || ! is_uint "$grant_down"; then
+  grant_down=10000
+fi
+if [ -z "$grant_up" ] || ! is_uint "$grant_up"; then
+  grant_up=10000
+fi
+if [ -z "$grant_up_quota" ] || ! is_uint "$grant_up_quota"; then
+  grant_up_quota=0
+fi
+if [ -z "$grant_down_quota" ] || ! is_uint "$grant_down_quota"; then
+  grant_down_quota=0
+fi
+
+# Optional calibration to make real-world speed limits closer to target.
+# Profile values (preferred): .profile.speedCalibration.downloadPercent / uploadPercent
+# Legacy fallback: /etc/icxifi/speed_factor_percent (single factor)
+legacy_speed_factor="$(read_legacy_speed_factor)"
+speed_factor_down="$(read_profile_speed_factor downloadPercent "$legacy_speed_factor")"
+speed_factor_up="$(read_profile_speed_factor uploadPercent "$legacy_speed_factor")"
+grant_down="$(apply_speed_factor "$grant_down" "$speed_factor_down")"
+grant_up="$(apply_speed_factor "$grant_up" "$speed_factor_up")"
+
+if ! command -v ndsctl >/dev/null 2>&1; then
+  print_status_json 500 "Internal Server Error" '{"ok":false,"error":"ndsctl not found in PATH"}'
+  log_debug "ndsctl_missing"
+  exit 0
+fi
+
+info="$(nds_client_info "$clientIp")"
+token="$(printf '%s' "$info" | cut -d '|' -f 1)"
+old_remaining="$(printf '%s' "$info" | cut -d '|' -f 2)"
+is_authed="$(printf '%s' "$info" | cut -d '|' -f 3)"
+
+if ! is_uint "$old_remaining"; then
+  old_remaining=0
+fi
+if [ "$direct_mode" = "1" ] && [ -n "$grant_remaining" ] && is_uint "$grant_remaining" && [ "$grant_remaining" -gt 0 ]; then
+  new_timeout=$(( (grant_remaining + 59) / 60 ))
+elif [ "$is_authed" = "1" ] && [ "$old_remaining" -gt 0 ]; then
+  new_timeout=$((old_remaining + grant_minutes))
+else
+  new_timeout="$grant_minutes"
+fi
+if [ "$new_timeout" -lt 1 ]; then
+  new_timeout=1
+fi
+
+auth_target="$clientIp"
+if [ -n "$token" ]; then
+  auth_target="$token"
+fi
+
+if [ "$direct_mode" = "1" ]; then
+  custom="icxifi|direct=1|amount=${voucher_amount}|mins=${grant_minutes}"
+else
+  custom="icxifi|code=${voucher_code}|amount=${voucher_amount}|mins=${grant_minutes}"
+fi
+
+if nds_out="$(ndsctl auth "$auth_target" "$new_timeout" "$grant_up" "$grant_down" "$grant_up_quota" "$grant_down_quota" "$custom" 2>&1)"; then
+  # Store session by MAC for "Continue" when user disconnects and returns
+  if [ -n "$macHint" ] || [ -n "$clientIp" ]; then
+    SESS_DIR="/tmp/icxifi_sessions"
+    mkdir -p "$SESS_DIR"
+    now_epoch="$(date +%s)"
+    if [ -n "$macHint" ]; then
+      sess_key="$(echo "$macHint" | tr -d ':-' | tr 'a-z' 'A-Z')"
+      [ -n "$sess_key" ] || sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+    else
+      sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+    fi
+    if [ -n "$sess_key" ]; then
+      printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
+        "$now_epoch" "$new_timeout" "$grant_down" "$grant_up" "${macHint:-}" "${clientIp:-}" \
+        > "$SESS_DIR/${sess_key}" 2>/dev/null || true
+    fi
+  fi
+else
+  print_status_json 502 "Bad Gateway" '{"ok":false,"error":"openNDS auth failed"}'
+  trimmed="$(printf '%s' "$nds_out" | tr '\n' ' ' | cut -c1-220)"
+  log_debug "auth_failed ip=$clientIp target=$auth_target add=$grant_minutes old=$old_remaining new=$new_timeout up=$grant_up down=$grant_down code=$voucher_code nds=$trimmed"
+  exit 0
+fi
+
+if [ "$direct_mode" != "1" ]; then
+  voucher_status="$(json_get_string status "$resp_redeem")"
+  voucher_status="$(printf '%s' "$voucher_status" | tr -cd 'A-Za-z_-')"
+  if [ -z "$voucher_status" ]; then
+    voucher_status="redeemed"
+  fi
+fi
+
+trimmed="$(printf '%s' "$nds_out" | tr '\n' ' ' | cut -c1-220)"
+log_debug "auth_ok ip=$clientIp target=$auth_target old=$old_remaining add=$grant_minutes new=$new_timeout up=$grant_up down=$grant_down uq=$grant_up_quota dq=$grant_down_quota code=$voucher_code nds=$trimmed"
+
+if [ "$direct_mode" = "1" ]; then
+  print_json "$(printf '{"ok":true,"mode":"wallet","grant":{"minutes":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s},"voucher":{"code":"%s","minutes":%s,"amount":%s,"status":"%s"}}' "$grant_minutes" "${grant_remaining:-0}" "$grant_down" "$grant_up" "$voucher_code" "$grant_minutes" "$voucher_amount" "$voucher_status")"
+else
+  print_json "$(printf '{"ok":true,"mode":"vendo","grant":{"minutes":%s,"downloadKbps":%s,"uploadKbps":%s},"voucher":{"code":"%s","minutes":%s,"amount":%s,"status":"%s"}}' "$grant_minutes" "$grant_down" "$grant_up" "$voucher_code" "$grant_minutes" "$voucher_amount" "$voucher_status")"
+fi

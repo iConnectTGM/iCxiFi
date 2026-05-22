@@ -1,0 +1,139 @@
+#!/bin/sh
+# Pause session: deauth client, store remaining time for later resume
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+BASE_FILE="/etc/icxifi/cloud_base_url"
+RID_FILE="/etc/icxifi/router_id"
+APIKEY_FILE="/etc/icxifi/router_api_key"
+
+printf 'Content-Type: application/json\r\n'
+printf 'Cache-Control: no-store\r\n\r\n'
+
+clientIp="${REMOTE_ADDR:-}"
+clientMac=""
+if [ -n "$QUERY_STRING" ]; then
+  qs_ip=$(echo "$QUERY_STRING" | sed -n 's/.*[cC]lient[Ii]p=\([^&]*\).*/\1/p')
+  [ -n "$qs_ip" ] && clientIp="$qs_ip"
+  clientMac=$(echo "$QUERY_STRING" | sed -n 's/.*[cC]lient[Mm]ac=\([^&]*\).*/\1/p')
+fi
+if [ -z "$clientIp" ]; then
+  printf '{"ok":false,"error":"Unknown client"}\n'
+  exit 0
+fi
+
+if [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ]; then
+  BASE="$(tr -d '\r\n' < "$BASE_FILE" 2>/dev/null || true)"
+  RID="$(tr -d '\r\n' < "$RID_FILE" 2>/dev/null || true)"
+  APIKEY="$(tr -d '\r\n' < "$APIKEY_FILE" 2>/dev/null || true)"
+  if [ -n "$BASE" ] && [ -n "$RID" ] && [ -n "$APIKEY" ]; then
+    PAYLOAD="$(printf '{"client":{"ip":"%s","mac":"%s"}}' "$clientIp" "$clientMac")"
+    RESP="$(curl -sS --connect-timeout 5 -m 12 -X POST "$BASE/api/router/grants/pause" \
+      -H "Authorization: Bearer $APIKEY" \
+      -H "X-Router-ID: $RID" \
+      -H "Content-Type: application/json" \
+      -d "$PAYLOAD" 2>/dev/null || true)"
+    if printf '%s' "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+      if command -v ndsctl >/dev/null 2>&1 && [ -n "$clientIp" ]; then
+        ndsctl deauth "$clientIp" 2>/dev/null || true
+      fi
+      printf '%s\n' "$RESP"
+      exit 0
+    fi
+  fi
+fi
+
+if ! command -v ndsctl >/dev/null 2>&1; then
+  printf '{"ok":false,"error":"OpenNDS not available"}\n'
+  exit 0
+fi
+
+# Get session info before deauth
+nds_json="$(ndsctl json "$clientIp" 2>/dev/null || true)"
+if [ -z "$nds_json" ]; then
+  printf '{"ok":false,"error":"Session not found"}\n'
+  exit 0
+fi
+
+if ! printf '%s' "$nds_json" | grep -qi '"state".*[Aa]uthenticated'; then
+  # Fallback: client may have just dropped from OpenNDS table; freeze from stored session.
+  SESS_DIR="/tmp/icxifi_sessions"
+  sess_file=""
+  if [ -n "$clientMac" ]; then
+    sess_key="$(echo "$clientMac" | tr -d ':-' | tr 'a-z' 'A-Z')"
+    [ -f "$SESS_DIR/${sess_key}" ] && sess_file="$SESS_DIR/${sess_key}"
+  fi
+  if [ -z "$sess_file" ] && [ -n "$clientIp" ]; then
+    key_ip="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+    [ -f "$SESS_DIR/${key_ip}" ] && sess_file="$SESS_DIR/${key_ip}"
+  fi
+  if [ -n "$sess_file" ] && [ -s "$sess_file" ]; then
+    granted_at="$(sed -n 's/.*"grantedAt"[^0-9]*\([0-9]*\).*/\1/p' "$sess_file" | head -n 1)"
+    mins_granted="$(sed -n 's/.*"minutesGranted"[^0-9]*\([0-9]*\).*/\1/p' "$sess_file" | head -n 1)"
+    dl_kbps="$(sed -n 's/.*"downloadKbps"[^0-9]*\([0-9]*\).*/\1/p' "$sess_file" | head -n 1)"
+    ul_kbps="$(sed -n 's/.*"uploadKbps"[^0-9]*\([0-9]*\).*/\1/p' "$sess_file" | head -n 1)"
+    sess_mac="$(sed -n 's/.*"clientMac"[^"]*"\([^"]*\)".*/\1/p' "$sess_file" | head -n 1)"
+    now="$(date +%s)"
+    elapsed_secs=$((now - granted_at))
+    seconds_left=$((mins_granted * 60 - elapsed_secs))
+    [ "$seconds_left" -lt 0 ] && seconds_left=0
+    if [ "$seconds_left" -gt 0 ]; then
+      PAUSED_DIR="/tmp/icxifi_paused"
+      mkdir -p "$PAUSED_DIR"
+      key="$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+      if [ -n "$sess_mac" ]; then
+        key="$(echo "$sess_mac" | tr -c 'A-Za-z0-9' '_')"
+      fi
+      PAUSED_FILE="$PAUSED_DIR/${key}"
+      dl_kbps="${dl_kbps:-10000}"
+      ul_kbps="${ul_kbps:-10000}"
+      printf '{"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s,"clientIp":"%s","clientMac":"%s","pausedAt":%s}' \
+        "$seconds_left" "$dl_kbps" "$ul_kbps" "$clientIp" "${sess_mac:-$clientMac}" "$now" > "$PAUSED_FILE"
+      printf '{"ok":true,"paused":true,"minutesLeft":%s,"remainingSeconds":%s}\n' "$((seconds_left / 60))" "$seconds_left"
+      exit 0
+    fi
+  fi
+  printf '{"ok":false,"error":"Disconnected"}\n'
+  exit 0
+fi
+
+# Extract values (try quoted and unquoted session_end)
+session_end="$(printf '%s' "$nds_json" | sed -n 's/.*"session_end"[^"]*"\([0-9]*\)".*/\1/p' | head -n 1)"
+[ -z "$session_end" ] && session_end="$(printf '%s' "$nds_json" | sed -n 's/.*"session_end"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+client_mac="$(printf '%s' "$nds_json" | sed -n 's/.*"mac"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+dl_kbps="$(printf '%s' "$nds_json" | sed -n 's/.*"download_rate_limit_threshold"[[:space:]]*:[[:space:]]*"\([0-9]*\)".*/\1/p' | head -n 1)"
+ul_kbps="$(printf '%s' "$nds_json" | sed -n 's/.*"upload_rate_limit_threshold"[[:space:]]*:[[:space:]]*"\([0-9]*\)".*/\1/p' | head -n 1)"
+
+now="$(date +%s)"
+seconds_left=0
+if [ -n "$session_end" ] && [ "$session_end" != "null" ]; then
+  case "$session_end" in
+    ''|*[!0-9]*) ;;
+    *) seconds_left=$((session_end - now)); [ "$seconds_left" -lt 0 ] && seconds_left=0 ;;
+  esac
+fi
+
+# Need at least 1 second to pause
+if [ "$seconds_left" -lt 1 ]; then
+  printf '{"ok":false,"error":"No time left"}\n'
+  exit 0
+fi
+
+# Deauth
+ndsctl deauth "$clientIp" 2>/dev/null || true
+
+# Store paused state - use MAC for stability (IP can change on reconnect)
+PAUSED_DIR="/tmp/icxifi_paused"
+mkdir -p "$PAUSED_DIR"
+key="$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+if [ -n "$client_mac" ]; then
+  key="$(echo "$client_mac" | tr -c 'A-Za-z0-9' '_')"
+fi
+PAUSED_FILE="$PAUSED_DIR/${key}"
+dl_kbps="${dl_kbps:-10000}"
+ul_kbps="${ul_kbps:-10000}"
+printf '{"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s,"clientIp":"%s","clientMac":"%s","pausedAt":%s}' \
+  "$seconds_left" "$dl_kbps" "$ul_kbps" "$clientIp" "${client_mac:-}" "$now" > "$PAUSED_FILE"
+
+printf '{"ok":true,"paused":true,"minutesLeft":%s,"remainingSeconds":%s}\n' "$((seconds_left / 60))" "$seconds_left"
+exit 0

@@ -1,0 +1,2714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iCxiFi Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #030407; --surface: #10141a; --surface2: #0c1015;
+      --line: rgba(255, 255, 255, 0.18); --line-strong: rgba(190, 220, 255, 0.34);
+      --text: #f3f7fb; --muted: #a3aebc; --title: #f6f9fd; --accent: #8fcfff;
+      --success: #8fd6b4; --ok: #a7ecc8; --danger: #ff9a9a; --sidebar-w: 200px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+      background: linear-gradient(165deg, #06080c 0%, #04060a 55%, #030407 100%);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+    .auth-page {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 2rem;
+    }
+    .auth-panel {
+      width: 100%; max-width: 400px;
+      padding: 2rem;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(0,0,0,0.2)), var(--surface);
+      box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+    }
+    .auth-tabs { display: flex; gap: 0; margin-bottom: 1.5rem; border-bottom: 1px solid var(--line); }
+    .auth-tabs button {
+      flex: 1; padding: 0.6rem; background: none; border: none; color: var(--muted);
+      font-size: 1rem; font-weight: 600; cursor: pointer; font-family: inherit;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .auth-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .auth-tabs button:hover:not(.active) { color: var(--text); }
+    .auth-panel .logo-wrap { text-align: center; margin-bottom: 1.25rem; }
+    .auth-panel .logo { max-width: 140px; height: auto; border-radius: 10px; display: inline-block; vertical-align: middle; }
+    .auth-panel h1 { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; margin-bottom: 1rem; color: var(--title); text-align: center; }
+    .auth-panel form { display: flex; flex-direction: column; gap: 1rem; }
+    .auth-panel input {
+      padding: 0.75rem 1rem; background: rgba(4, 8, 14, 0.9); border: 1px solid var(--line);
+      border-radius: 12px; color: var(--text); font-size: 0.95rem; font-family: inherit;
+    }
+    .auth-panel input:focus { outline: none; border-color: var(--line-strong); }
+    .auth-panel button[type="submit"] {
+      padding: 0.75rem 1.5rem; background: linear-gradient(180deg, rgba(160, 220, 255, 0.25), rgba(143, 207, 255, 0.15));
+      border: 1px solid var(--line-strong); border-radius: 12px; color: #f6f9fd;
+      font-weight: 700; cursor: pointer; font-family: inherit; font-size: 1rem;
+    }
+    .auth-panel button[type="submit"]:hover { filter: brightness(1.15); }
+    .auth-panel .error { color: var(--danger); font-size: 0.85rem; }
+    .auth-panel .hint { color: var(--muted); font-size: 0.85rem; }
+    .auth-panel .link-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 0.85rem;
+      padding: 0;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+    }
+    .auth-panel .link-btn:hover { text-decoration: underline; }
+    .auth-tabs.hidden { display: none; }
+    .auth-panel form.auth-form { display: none; }
+    .auth-panel form.auth-form.active { display: flex; }
+    .layout { display: flex; min-height: 100vh; display: none; }
+    .layout.visible { display: flex; }
+    .auth-page.hidden { display: none; }
+    .sidebar {
+      width: var(--sidebar-w); background: linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%);
+      border-right: 1px solid var(--line); padding: 1rem 0; flex-shrink: 0;
+    }
+    .sidebar .logo { padding: 0 1rem 1rem; border-bottom: 1px solid var(--line); }
+    .sidebar .logo img { max-width: 100px; border-radius: 8px; }
+    .sidebar nav a {
+      display: block; padding: 0.6rem 1rem; color: var(--muted); text-decoration: none;
+      font-size: 0.95rem; font-weight: 500; border-left: 3px solid transparent;
+    }
+    .sidebar nav a:hover { color: var(--text); background: rgba(143, 207, 255, 0.05); }
+    .sidebar nav a.active { color: var(--accent); border-left-color: var(--accent); background: rgba(143, 207, 255, 0.08); }
+    .sidebar .logout { margin-top: auto; padding: 1rem; }
+    .sidebar .logout button {
+      width: 100%; padding: 0.5rem; background: rgba(255,154,154,0.08);
+      border: 1px solid rgba(255,154,154,0.3); border-radius: 8px;
+      color: var(--danger); cursor: pointer; font-size: 0.85rem; font-family: inherit;
+    }
+    .main { flex: 1; padding: 1.5rem 2rem; overflow: auto; overscroll-behavior: contain; }
+    .main h2 { font-family: 'Orbitron', sans-serif; font-size: 1.3rem; margin-bottom: 1rem; color: var(--title); }
+    .license-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .license-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.15));
+      border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem;
+      border-left: 4px solid var(--accent);
+    }
+    .license-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+    .license-card .value { font-size: 1.5rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; text-align: right; display: block; }
+    .license-card.available .value { color: var(--ok); }
+    .license-card.used .value { color: var(--accent); }
+    .license-keys { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+    .license-keys .key { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; background: rgba(12, 16, 21, 0.8); }
+    tbody tr { background: rgba(16, 20, 26, 0.4); }
+    tr:hover td { background: rgba(143, 207, 255, 0.05); }
+    .badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+    .badge.online { background: rgba(143, 214, 180, 0.2); color: var(--ok); }
+    .badge.offline { background: rgba(163, 174, 188, 0.2); color: var(--muted); }
+    .badge.active { background: rgba(143, 214, 180, 0.2); color: var(--ok); }
+    .badge.disabled { background: rgba(255, 154, 154, 0.18); color: var(--danger); }
+    .router-actions { white-space: nowrap; text-align: right; }
+    .icon-action-btn {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(12, 16, 21, 0.8);
+      color: var(--text);
+      cursor: pointer;
+      margin-left: 0.25rem;
+      font-size: 0.95rem;
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .icon-action-btn:hover { border-color: var(--line-strong); color: var(--accent); }
+    .router-action-menu {
+      min-width: 220px;
+      padding: 0.3rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(8, 12, 18, 0.98);
+    }
+    .router-action-menu button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      padding: 0.45rem 0.55rem;
+      min-height: 40px;
+      border-radius: 7px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+    .router-action-menu button:hover { background: rgba(143, 207, 255, 0.12); }
+    .router-action-menu button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      background: transparent;
+    }
+    .router-action-menu button.danger { color: var(--danger); }
+    .router-action-sep {
+      height: 1px;
+      margin: 0.25rem 0;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .router-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 5, 10, 0.76);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 220;
+    }
+    .router-modal.open { display: flex; }
+    .router-modal-card {
+      width: min(540px, 100%);
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.2)), var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 24px 56px rgba(0, 0, 0, 0.5);
+      overflow: hidden;
+      max-height: min(90dvh, 920px);
+      display: flex;
+      flex-direction: column;
+    }
+    .router-modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .router-modal-head h3 { font-size: 1rem; margin: 0; color: var(--title); }
+    .router-modal-close {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 1.15rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .router-modal-body {
+      padding: 1rem;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .router-modal-row { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.8rem; }
+    .router-modal-row label { font-size: 0.82rem; color: var(--muted); }
+    .router-modal .error { color: var(--danger); font-size: 0.85rem; }
+    .router-modal-row input, .router-modal-row textarea, .router-modal-row select {
+      width: 100%;
+      padding: 0.55rem 0.7rem;
+      background: rgba(4, 8, 14, 0.9);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    .router-modal-row textarea { min-height: 92px; resize: vertical; }
+    .router-rate-editor-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      margin-bottom: 0.5rem;
+    }
+    .router-rate-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(4, 8, 14, 0.45);
+      margin-bottom: 0.5rem;
+    }
+    .router-rate-table th,
+    .router-rate-table td {
+      padding: 0.45rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      text-align: left;
+      vertical-align: middle;
+    }
+    .router-rate-table th {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .router-rate-table td input {
+      width: 100%;
+      min-width: 70px;
+      padding: 0.4rem 0.5rem;
+      border-radius: 7px;
+      border: 1px solid var(--line);
+      background: rgba(4, 8, 14, 0.9);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.88rem;
+    }
+    .router-rate-remove {
+      width: 28px;
+      height: 28px;
+      border: 1px solid rgba(255, 154, 154, 0.35);
+      color: var(--danger);
+      background: rgba(255, 154, 154, 0.1);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      line-height: 1;
+    }
+    .router-rate-hint {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .router-modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+    .empty { color: var(--muted); padding: 2rem; text-align: center; font-style: italic; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .btn-sm { padding: 0.35rem 0.6rem; font-size: 0.8rem; border-radius: 8px; cursor: pointer; border: 1px solid var(--line); background: rgba(12, 16, 21, 0.8); color: var(--text); font-family: inherit; }
+    .btn-sm.primary { background: linear-gradient(180deg, rgba(143,207,255,0.25), rgba(143,207,255,0.15)); border-color: var(--line-strong); }
+    .btn-sm.danger { background: rgba(255, 154, 154, 0.15); border-color: rgba(255, 154, 154, 0.4); color: var(--danger); }
+    .add-router-card { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.1)); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; }
+    .add-router-card .form-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end; margin-bottom: 0.75rem; }
+    .filters { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+    .filters label { color: var(--muted); font-size: 0.9rem; }
+    .filters select { padding: 0.4rem 0.6rem; background: rgba(4,8,14,0.9); border: 1px solid var(--line); border-radius: 8px; color: var(--text); min-width: 120px; }
+    .add-router-card .field { display: flex; flex-direction: column; gap: 0.25rem; }
+    .add-router-card label { font-size: 0.8rem; color: var(--muted); }
+    .add-router-card input, .add-router-card select { padding: 0.5rem 0.75rem; background: rgba(4, 8, 14, 0.9); border: 1px solid var(--line); border-radius: 8px; color: var(--text); }
+    .bind-result { margin-top: 1rem; padding: 1rem; background: rgba(4,8,14,0.6); border-radius: 10px; border: 1px solid var(--line); }
+    .bind-result .code { font-size: 1.5rem; font-weight: 700; letter-spacing: 0.2em; font-family: 'JetBrains Mono', monospace; }
+    .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 0.75rem 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; z-index: 200; animation: slideIn 0.3s ease; }
+    .toast.success { border-left: 4px solid var(--ok); }
+    .toast.error { border-left: 4px solid var(--danger); }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .refresh-btn { padding: 0.4rem 0.8rem; background: rgba(12, 16, 21, 0.6); border: 1px solid var(--line); border-radius: 8px; color: var(--muted); cursor: pointer; font-size: 0.85rem; }
+    .refresh-btn:hover { color: var(--accent); }
+    .pending-count-badge {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.15rem;
+      height: 1.15rem;
+      margin-left: 0.35rem;
+      padding: 0 0.3rem;
+      border-radius: 999px;
+      background: rgba(255, 154, 154, 0.2);
+      border: 1px solid rgba(255, 154, 154, 0.45);
+      color: var(--danger);
+      font-size: 0.72rem;
+      font-weight: 700;
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .pending-count-badge.show { display: inline-flex; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .link-admin { margin-top: 1rem; font-size: 0.85rem; }
+    .revenue-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    @media (max-width: 700px) { .revenue-cards { grid-template-columns: repeat(2, 1fr); } }
+    .revenue-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.15));
+      border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem;
+      border-left: 4px solid var(--accent);
+    }
+    .revenue-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+    .revenue-card .value { font-size: 1.4rem; font-weight: 600; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; text-align: right; display: block; }
+    .chart-section { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.1)); border: 1px solid var(--line); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; }
+    .chart-wrap { height: 200px; position: relative; }
+    .table-responsive {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .table-responsive table { min-width: 860px; border: 0; margin: 0; }
+    .table-responsive th, .table-responsive td { white-space: nowrap; }
+    @media (max-width: 960px) {
+      .layout.visible { flex-direction: column; }
+      .sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+        padding: 0.5rem 0;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        background: linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%);
+      }
+      .sidebar .logo { display: none; }
+      .sidebar nav {
+        display: flex;
+        gap: 0.25rem;
+        overflow-x: auto;
+        padding: 0 0.5rem 0.5rem;
+      }
+      .sidebar nav a {
+        flex: 0 0 auto;
+        border-left: none;
+        border-bottom: 2px solid transparent;
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+      }
+      .sidebar nav a.active {
+        border-left-color: transparent;
+        border-bottom-color: var(--accent);
+      }
+      .sidebar .logout { margin-top: 0; padding: 0.5rem; }
+      .sidebar .logout button { width: auto; padding: 0.45rem 0.75rem; }
+      .main { padding: 1rem; }
+      .license-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .add-router-card .field { flex: 1 1 45%; }
+    }
+    @media (max-width: 640px) {
+      .auth-page { padding: 1rem; }
+      .auth-panel { padding: 1.25rem; border-radius: 14px; }
+      .main h2 { font-size: 1.1rem; }
+      .main { padding: 0.85rem; }
+      .license-cards, .revenue-cards { grid-template-columns: 1fr; }
+      .add-router-card { padding: 1rem; }
+      .add-router-card .form-row { gap: 0.5rem; }
+      .add-router-card .field { width: 100%; }
+      .add-router-card input, .add-router-card select {
+        width: 100% !important;
+        min-width: 0 !important;
+      }
+      .btn-sm, .refresh-btn { min-height: 38px; }
+      .toast { left: 0.75rem; right: 0.75rem; bottom: 0.75rem; }
+      .table-responsive table { min-width: 700px; }
+      .table-responsive th, .table-responsive td { padding: 0.6rem 0.65rem; }
+      .icon-action-btn { width: 34px; height: 34px; }
+      .router-modal {
+        align-items: flex-end;
+        padding: 0;
+      }
+      .router-modal-card {
+        width: 100%;
+        max-width: 100%;
+        border-radius: 16px 16px 0 0;
+        max-height: 92dvh;
+      }
+      .router-modal-body { padding: 0.85rem; }
+      .router-modal-actions {
+        position: sticky;
+        bottom: 0;
+        padding-top: 0.55rem;
+        margin-top: 0.55rem;
+        background: linear-gradient(180deg, rgba(16,20,26,0.2), rgba(16,20,26,0.95));
+      }
+      .router-rate-editor-head {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .router-rate-hint { line-height: 1.3; }
+      .router-rate-table td input {
+        min-width: 56px;
+        font-size: 0.82rem;
+        padding: 0.35rem 0.4rem;
+      }
+    }
+    @media (max-width: 480px) {
+      .sidebar nav a {
+        padding: 0.45rem 0.65rem;
+        font-size: 0.85rem;
+      }
+      .btn-sm, .refresh-btn {
+        min-height: 40px;
+        padding: 0.45rem 0.7rem;
+      }
+      .table-responsive table { min-width: 620px; }
+      .toast {
+        left: 0.5rem;
+        right: 0.5rem;
+        bottom: max(0.5rem, env(safe-area-inset-bottom));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="authPage" class="auth-page">
+    <div class="auth-panel">
+      <div class="logo-wrap">
+        <img src="/dashboard/logo/ICXIFI_logo_inverted_grey.png" alt="iCxiFi" class="logo" loading="lazy" decoding="async" onerror="this.style.display='none'">
+      </div>
+      <h1 id="authTitle">Log in</h1>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Login</button>
+        <button type="button" class="auth-tab" data-tab="register">Register</button>
+      </div>
+      <form id="loginForm" class="auth-form active">
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <div id="loginHint" class="hint"></div>
+        <div id="loginError" class="error"></div>
+        <button type="button" id="showForgotBtn" class="link-btn">Forgot password?</button>
+        <button type="submit">Log in</button>
+      </form>
+      <form id="registerForm" class="auth-form">
+        <input type="text" name="name" placeholder="Your name" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="password" name="password" placeholder="Password" required minlength="6">
+        <div id="registerError" class="error"></div>
+        <button type="submit">Create account</button>
+      </form>
+      <form id="forgotForm" class="auth-form">
+        <input type="email" name="email" placeholder="Enter your account email" required>
+        <div id="forgotError" class="error"></div>
+        <button type="submit">Send reset link</button>
+        <button type="button" id="backToLoginBtn" class="link-btn">Back to login</button>
+      </form>
+      <form id="resetForm" class="auth-form">
+        <input type="password" name="password" placeholder="New password" required minlength="6">
+        <input type="password" name="confirmPassword" placeholder="Confirm new password" required minlength="6">
+        <div id="resetMsg" class="hint"></div>
+        <div id="resetError" class="error"></div>
+        <button type="submit">Reset password</button>
+        <button type="button" id="backFromResetBtn" class="link-btn">Back to login</button>
+      </form>
+    </div>
+    <p class="muted link-admin" style="margin-top:1rem">Admin? Use <a href="/admin" style="color:var(--accent)">/admin</a> with API key.</p>
+  </div>
+
+  <div id="app" class="layout">
+    <aside class="sidebar">
+      <div class="logo"><img src="/dashboard/logo/ICXIFI_logo_inverted_grey.png" alt="iCxiFi" loading="lazy" decoding="async" onerror="this.outerHTML='<span>iCxiFi</span>'"></div>
+      <nav>
+        <a href="#" class="nav-link active" data-page="dashboard">Dashboard</a>
+        <a href="#" class="nav-link" data-page="routers">Router</a>
+        <a href="#" class="nav-link" data-page="vouchers">Voucher</a>
+        <a href="#" class="nav-link" data-page="sales">Sales</a>
+        <a href="#" class="nav-link" data-page="license">License</a>
+      </nav>
+      <div class="logout"><button id="logoutBtn">Log out</button></div>
+    </aside>
+    <main class="main">
+      <div id="pageDashboard" class="panel active">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+          <h2 style="margin:0">Dashboard</h2>
+          <button class="refresh-btn" id="dashRefresh">↻ Refresh</button>
+        </div>
+        <div class="license-cards" style="margin-bottom:1.5rem">
+          <div class="license-card available"><span class="label">License Available</span><span class="value" id="licAvailable">0</span><span class="muted" style="font-size:0.8rem">slots</span></div>
+          <div class="license-card used"><span class="label">In use</span><span class="value" id="licUsed">0</span><span class="muted" style="font-size:0.8rem">routers</span></div>
+        </div>
+        <h3 style="font-size:1rem;margin-bottom:0.75rem;color:var(--muted)">Revenue</h3>
+        <div class="revenue-cards">
+          <div class="revenue-card"><span class="label">Daily</span><span class="value" id="revDaily">₱ 0</span></div>
+          <div class="revenue-card"><span class="label">Weekly</span><span class="value" id="revWeekly">₱ 0</span></div>
+          <div class="revenue-card"><span class="label">Monthly</span><span class="value" id="revMonthly">₱ 0</span></div>
+          <div class="revenue-card"><span class="label">Yearly</span><span class="value" id="revYearly">₱ 0</span></div>
+        </div>
+        <div class="chart-section">
+          <h3 style="font-size:1rem;margin-bottom:0.75rem;color:var(--muted)">Revenue (Last 30 Days)</h3>
+          <div class="chart-wrap"><canvas id="revenueChart"></canvas></div>
+        </div>
+        <p class="muted" style="font-size:0.9rem"><a href="#" data-goto="sales" style="color:var(--accent);text-decoration:none">View Sales & Transaction History →</a></p>
+      </div>
+      <div id="pageLicense" class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+          <h2 style="margin:0">My Licenses</h2>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <button class="refresh-btn" id="licenseTransferCenterOpen">License Transfers <span id="licenseTransferPendingBadge" class="pending-count-badge">0</span></button>
+            <button class="refresh-btn" id="licenseRefresh">Refresh</button>
+          </div>
+        </div>
+        <div class="license-cards" style="margin-bottom:1.5rem">
+          <div class="license-card available"><span class="label">Available</span><span class="value" id="licPageAvailable">0</span><span class="muted" style="font-size:0.8rem">slots</span></div>
+          <div class="license-card used"><span class="label">In use</span><span class="value" id="licPageUsed">0</span><span class="muted" style="font-size:0.8rem">routers</span></div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead><tr><th>License Key</th><th>Status</th><th>Attached Router</th><th>Action</th></tr></thead>
+            <tbody id="licenseRows"></tbody>
+          </table>
+        </div>
+        <div id="licenseKeysPage" class="license-keys" style="margin-top:1rem"></div>
+      </div>
+      <div id="pageSales" class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+          <h2 style="margin:0">Sales</h2>
+          <div style="display:flex;gap:0.5rem">
+            <button class="btn-sm danger" id="salesClearBtn" title="Clear transaction history">Clear History</button>
+            <button class="refresh-btn" id="salesRefresh">↻ Refresh</button>
+          </div>
+        </div>
+        <h3 style="font-size:1rem;margin-bottom:0.75rem;color:var(--muted)">Revenue</h3>
+        <div class="revenue-cards">
+          <div class="revenue-card"><span class="label">Daily</span><span class="value" id="salesRevDaily">₱ 0</span></div>
+          <div class="revenue-card"><span class="label">Weekly</span><span class="value" id="salesRevWeekly">₱ 0</span></div>
+          <div class="revenue-card"><span class="label">Monthly</span><span class="value" id="salesRevMonthly">₱ 0</span></div>
+          <div class="revenue-card"><span class="label">Yearly</span><span class="value" id="salesRevYearly">₱ 0</span></div>
+        </div>
+        <div class="chart-section">
+          <h3 style="font-size:1rem;margin-bottom:0.75rem;color:var(--muted)">Revenue (Last 30 Days)</h3>
+          <div class="chart-wrap"><canvas id="salesRevenueChart"></canvas></div>
+        </div>
+        <h3 style="font-size:1rem;margin-bottom:0.75rem;color:var(--muted)">Transaction History</h3>
+        <div class="table-responsive">
+        <table>
+          <thead><tr><th>#</th><th>Router</th><th>Client Device</th><th>Amount</th><th>Method</th><th>Date</th></tr></thead>
+          <tbody id="salesTransactions"></tbody>
+        </table>
+        </div>
+      </div>
+      <div id="pageRouters" class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+          <h2 style="margin:0">Routers</h2>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <button class="refresh-btn" id="transferCenterOpen">Transfers</button>
+            <button class="refresh-btn" id="routerRefresh">Refresh</button>
+          </div>
+        </div>
+        <div class="add-router-card">
+          <h3 style="font-size:1rem;margin-bottom:0.75rem;color:var(--muted)">Router Activation</h3>
+          <p class="muted" style="margin-bottom:0.75rem;font-size:0.9rem">Open this page from router registration. Bind code is generated by router and used here for activation.</p>
+          <div class="form-row">
+            <div class="field">
+              <label>Router Name</label>
+              <input type="text" id="regRouterName" placeholder="Store Router #1" style="width:200px">
+            </div>
+            <div class="field">
+              <label>Router ID (MAC)</label>
+              <input type="text" id="regRouterId" placeholder="ca:38:24:0b:cf:a8" style="width:180px;font-family:monospace">
+            </div>
+            <div class="field">
+              <label>License Key</label>
+              <select id="regLicenseKey" style="min-width:180px"></select>
+            </div>
+          </div>
+          <div id="bindResult" class="bind-result" style="display:none">
+            <p class="muted" style="margin-bottom:0.5rem">Router bind code:</p>
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+              <span id="bindCodeDisplay" class="code">000000</span>
+              <button type="button" class="btn-sm" id="copyBindCode">Copy</button>
+              <button type="button" class="btn-sm primary" id="activateRouterHere">Activate Router Here</button>
+            </div>
+            <p class="muted" style="margin-top:0.5rem;font-size:0.82rem">If direct activation is unavailable, use Open Router Activation and tap Activate there.</p>
+          </div>
+          <div id="routerActivationHint" class="bind-result" style="display:none;margin-top:0.75rem">
+            <p class="muted" style="margin-bottom:0.5rem">Open your router registration page to complete activation:</p>
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+              <button type="button" class="btn-sm primary" id="openRouterActivate" style="display:none">Open Router Activation</button>
+              <span id="routerActivationManual" class="muted mono" style="font-size:0.78rem;display:none"></span>
+            </div>
+          </div>
+        </div>
+        <div class="table-responsive">
+        <table>
+          <thead><tr><th>Router ID</th><th>Name</th><th>License</th><th>Status</th><th>Online</th><th>Sales Today</th><th>Total Sales</th><th>Last Update</th><th>Description</th><th>Actions</th></tr></thead>
+          <tbody id="routersBody"></tbody>
+        </table>
+        </div>
+      </div>
+      <div id="pageVouchers" class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem">
+          <h2 style="margin:0">Generate Voucher</h2>
+          <button class="refresh-btn" id="voucherRefresh">↻ Refresh</button>
+        </div>
+        <div class="add-router-card">
+          <h3 style="font-size:1rem;margin-bottom:0.75rem;color:var(--muted)">Bulk Generate</h3>
+          <div class="form-row" style="flex-wrap:wrap">
+            <div class="field"><label>Router</label><select id="bulkRouter" required style="min-width:160px"></select></div>
+            <div class="field"><label>Count</label><input type="number" id="bulkCount" min="1" max="100" value="10" placeholder="1-100" style="width:80px"></div>
+            <div class="field"><label>Amount (₱)</label><input type="number" id="bulkAmount" min="1" placeholder="Use router rate" style="width:100px"></div>
+            <div class="field"><label>Minutes</label><input type="number" id="bulkMinutes" min="1" placeholder="Use router rate" style="width:80px"></div>
+            <div class="field"><label>Expiry (hours)</label><input type="number" id="bulkExpiry" min="1" max="168" value="24" style="width:80px"></div>
+            <div class="field"><label>&nbsp;</label><button type="button" class="btn-sm primary" id="bulkGenerate">Generate</button></div>
+          </div>
+          <div id="bulkResult" class="bind-result" style="display:none;margin-top:1rem">
+            <p class="muted" style="margin-bottom:0.5rem">Created <span id="bulkCreated">0</span> vouchers. <button type="button" class="btn-sm" id="bulkCopy">Copy codes</button> <button type="button" class="btn-sm" id="bulkDownload">Download CSV</button></p>
+            <pre id="bulkCodes" class="mono" style="font-size:0.8rem;max-height:100px;overflow:auto;margin-top:0.5rem"></pre>
+          </div>
+        </div>
+        <div style="margin-top:1.5rem">
+          <h3 style="font-size:1rem;margin-bottom:0.5rem;color:var(--muted)">Your Vouchers</h3>
+          <div class="filters" style="margin-bottom:0.5rem">
+            <label>Router:</label>
+            <select id="filterVoucherRouter"><option value="">All</option></select>
+            <label>Status:</label>
+            <select id="filterVoucherStatus"><option value="">All</option><option value="unused">Unused</option><option value="redeemed">Redeemed</option></select>
+          </div>
+        </div>
+        <div class="table-responsive">
+        <table>
+          <thead><tr><th>Code</th><th>Router</th><th>Amount</th><th>Minutes</th><th>Status</th><th>Created</th></tr></thead>
+          <tbody id="vouchersBody"></tbody>
+        </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="routerEditModal" class="router-modal" aria-hidden="true">
+    <div class="router-modal-card">
+      <div class="router-modal-head">
+        <h3 id="routerEditTitle">Edit Router</h3>
+        <button type="button" class="router-modal-close" id="routerEditClose" aria-label="Close">x</button>
+      </div>
+      <form id="routerEditForm" class="router-modal-body">
+        <input type="hidden" id="routerEditRouterId">
+        <div class="router-modal-row">
+          <label for="routerEditName">Router name</label>
+          <input id="routerEditName" type="text" maxlength="80" required>
+        </div>
+        <div class="router-modal-row">
+          <label for="routerEditDescription">Description</label>
+          <textarea id="routerEditDescription" maxlength="280" placeholder="Description"></textarea>
+        </div>
+        <div class="router-modal-row">
+          <label for="routerEditSsid">Local SSID (WiFi name)</label>
+          <input id="routerEditSsid" type="text" maxlength="64" placeholder="MyWiFi">
+        </div>
+        <div class="router-modal-row" style="display:flex;flex-direction:row;align-items:center;gap:0.6rem">
+          <input id="routerEditSeparateBands" type="checkbox" style="width:auto;accent-color:var(--accent)">
+          <label for="routerEditSeparateBands" style="margin:0">Separate SSID for 2.4G and 5G</label>
+        </div>
+        <div class="router-modal-row" id="routerEditSsid24Row" style="display:none">
+          <label for="routerEditSsid24">SSID 2.4G</label>
+          <input id="routerEditSsid24" type="text" maxlength="64" placeholder="MyWiFi-2G">
+        </div>
+        <div class="router-modal-row" id="routerEditSsid5Row" style="display:none">
+          <label for="routerEditSsid5">SSID 5G</label>
+          <input id="routerEditSsid5" type="text" maxlength="64" placeholder="MyWiFi-5G">
+        </div>
+        <div class="router-modal-row">
+          <label for="routerEditWelcomeMsg">Welcome message (optional)</label>
+          <input id="routerEditWelcomeMsg" type="text" maxlength="280" placeholder="Welcome to iCxiFi">
+        </div>
+        <div class="router-modal-row">
+          <label>Speed calibration (optional)</label>
+          <div class="form-row" style="gap:0.75rem">
+            <div class="field" style="flex:1">
+              <label for="routerEditDlCalib">DL Calibration (%)</label>
+              <input id="routerEditDlCalib" type="number" min="50" max="150" step="1" value="100">
+            </div>
+            <div class="field" style="flex:1">
+              <label for="routerEditUlCalib">UL Calibration (%)</label>
+              <input id="routerEditUlCalib" type="number" min="50" max="150" step="1" value="100">
+            </div>
+          </div>
+        </div>
+        <div class="router-modal-row">
+          <label>WiFi rates and speed limit per client</label>
+          <div class="router-rate-editor-head">
+            <span class="router-rate-hint">Edit per plan: Amount, Hours, Minutes, DL/UL Mbps</span>
+            <button type="button" class="btn-sm" id="routerRateAddBtn">Add Rate</button>
+          </div>
+          <table class="router-rate-table">
+            <thead>
+              <tr>
+                <th>Amount (PHP)</th>
+                <th>Hours</th>
+                <th>Minutes</th>
+                <th>DL (Mbps)</th>
+                <th>UL (Mbps)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="routerEditRatesBody"></tbody>
+          </table>
+        </div>
+        <div class="router-modal-actions">
+          <button type="button" class="btn-sm" id="routerEditCancel">Cancel</button>
+          <button type="submit" class="btn-sm primary">Update</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="routerMenuModal" class="router-modal" aria-hidden="true">
+    <div class="router-modal-card" style="max-width:320px">
+      <div class="router-modal-head">
+        <h3 id="routerMenuTitle">Router Actions</h3>
+        <button type="button" class="router-modal-close" id="routerMenuClose" aria-label="Close">x</button>
+      </div>
+      <div class="router-modal-body">
+        <div class="router-action-menu">
+          <button type="button" data-menu-action="transfer">Transfer Router</button>
+          <button type="button" id="routerMenuLicenseBtn" data-menu-action="remove-license" class="danger">Remove License</button>
+          <button type="button" data-menu-action="clear-sales" class="danger">Clear Sales</button>
+          <button type="button" data-menu-action="details">Details</button>
+          <div class="router-action-sep"></div>
+          <button type="button" id="routerMenuToggleStatusBtn" data-menu-action="toggle-status" class="danger">Make Inactive</button>
+          <button type="button" id="routerMenuUnbindBtn" data-menu-action="unbind-router" class="danger">Unbind Router</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="licensePickerModal" class="router-modal" aria-hidden="true">
+    <div class="router-modal-card" style="max-width:420px">
+      <div class="router-modal-head">
+        <h3 id="licensePickerTitle">Select License</h3>
+        <button type="button" class="router-modal-close" id="licensePickerClose" aria-label="Close">x</button>
+      </div>
+      <form id="licensePickerForm" class="router-modal-body">
+        <input type="hidden" id="licensePickerRouterId">
+        <input type="hidden" id="licensePickerAction">
+        <div class="router-modal-row">
+          <label for="licensePickerSelect">Available license keys</label>
+          <select id="licensePickerSelect" required></select>
+        </div>
+        <div class="router-modal-actions">
+          <button type="button" class="btn-sm" id="licensePickerCancel">Cancel</button>
+          <button type="submit" class="btn-sm primary">Apply</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="transferRequestModal" class="router-modal" aria-hidden="true">
+    <div class="router-modal-card" style="max-width:440px">
+      <div class="router-modal-head">
+        <h3 id="transferRequestTitle">Transfer Router</h3>
+        <button type="button" class="router-modal-close" id="transferRequestClose" aria-label="Close">x</button>
+      </div>
+      <form id="transferRequestForm" class="router-modal-body">
+        <input type="hidden" id="transferRequestRouterId">
+        <div class="router-modal-row">
+          <label for="transferRequestTargetEmail">Target account email</label>
+          <input id="transferRequestTargetEmail" type="email" placeholder="owner@example.com" required>
+        </div>
+        <div id="transferRequestError" class="error"></div>
+        <div class="router-modal-actions">
+          <button type="button" class="btn-sm" id="transferRequestCancel">Cancel</button>
+          <button type="submit" class="btn-sm primary">Send Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="transferCenterModal" class="router-modal" aria-hidden="true">
+    <div class="router-modal-card" style="max-width:980px">
+      <div class="router-modal-head">
+        <h3>Ownership Transfers</h3>
+        <button type="button" class="router-modal-close" id="transferCenterClose" aria-label="Close">x</button>
+      </div>
+      <div class="router-modal-body">
+        <h4 style="margin:0 0 0.5rem 0;color:var(--muted);font-size:0.9rem">Incoming Requests</h4>
+        <div class="table-responsive" style="margin-bottom:1rem">
+          <table>
+            <thead><tr><th>Date</th><th>Router</th><th>From</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="transferIncomingBody"></tbody>
+          </table>
+        </div>
+        <h4 style="margin:0 0 0.5rem 0;color:var(--muted);font-size:0.9rem">Transfer History</h4>
+        <div class="table-responsive">
+          <table>
+            <thead><tr><th>Date</th><th>Router</th><th>Direction</th><th>Other Account</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="transferHistoryBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="licenseTransferRequestModal" class="router-modal" aria-hidden="true">
+    <div class="router-modal-card" style="max-width:440px">
+      <div class="router-modal-head">
+        <h3 id="licenseTransferRequestTitle">Transfer License</h3>
+        <button type="button" class="router-modal-close" id="licenseTransferRequestClose" aria-label="Close">x</button>
+      </div>
+      <form id="licenseTransferRequestForm" class="router-modal-body">
+        <input type="hidden" id="licenseTransferRequestKey">
+        <div class="router-modal-row">
+          <label for="licenseTransferRequestTargetEmail">Target account email</label>
+          <input id="licenseTransferRequestTargetEmail" type="email" placeholder="owner@example.com" required>
+        </div>
+        <div id="licenseTransferRequestError" class="error"></div>
+        <div class="router-modal-actions">
+          <button type="button" class="btn-sm" id="licenseTransferRequestCancel">Cancel</button>
+          <button type="submit" class="btn-sm primary">Send Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="licenseTransferCenterModal" class="router-modal" aria-hidden="true">
+    <div class="router-modal-card" style="max-width:980px">
+      <div class="router-modal-head">
+        <h3>License Transfers</h3>
+        <button type="button" class="router-modal-close" id="licenseTransferCenterClose" aria-label="Close">x</button>
+      </div>
+      <div class="router-modal-body">
+        <h4 style="margin:0 0 0.5rem 0;color:var(--muted);font-size:0.9rem">Incoming Requests</h4>
+        <div class="table-responsive" style="margin-bottom:1rem">
+          <table>
+            <thead><tr><th>Date</th><th>License</th><th>From</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="licenseTransferIncomingBody"></tbody>
+          </table>
+        </div>
+        <h4 style="margin:0 0 0.5rem 0;color:var(--muted);font-size:0.9rem">Transfer History</h4>
+        <div class="table-responsive">
+          <table>
+            <thead><tr><th>Date</th><th>License</th><th>Direction</th><th>Other Account</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="licenseTransferHistoryBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = '';
+    function token() { return localStorage.getItem('icxifi_client_token') || ''; }
+    function setToken(t) { localStorage.setItem('icxifi_client_token', t); }
+    function clearToken() { localStorage.removeItem('icxifi_client_token'); }
+
+    function toast(msg, type = 'success') {
+      const el = document.createElement('div');
+      el.className = 'toast ' + type;
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+
+    async function api(path, opts = {}) {
+      const { method = 'GET', body } = opts;
+      const headers = { 'Authorization': 'Bearer ' + token() };
+      if (body) headers['Content-Type'] = 'application/json';
+      const r = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 401) { clearToken(); location.reload(); return { _authFail: true }; }
+      if (!r.ok && !j._authFail) throw new Error(j.error || j.message || 'Request failed');
+      return j;
+    }
+
+    function fmt(t) {
+      if (!t) return '-';
+      const d = new Date(t);
+      return isNaN(d.getTime()) ? t : d.toLocaleString();
+    }
+
+    function timeAgo(t) {
+      if (!t) return '-';
+      const d = new Date(t);
+      if (isNaN(d.getTime())) return t;
+      const s = Math.floor((Date.now() - d) / 1000);
+      if (s < 60) return 'now';
+      if (s < 3600) return Math.floor(s/60) + 'm ago';
+      if (s < 86400) return Math.floor(s/3600) + 'h ago';
+      return Math.floor(s/86400) + 'd ago';
+    }
+
+    function fmtPeso(value) {
+      const n = Number(value || 0);
+      if (!Number.isFinite(n)) return '₱ 0';
+      return '₱ ' + n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    const pageParams = new URLSearchParams(window.location.search);
+    let resetToken = pageParams.get('resetToken') || '';
+    let transferRequestId = pageParams.get('transferRequestId') || '';
+    let transferToken = pageParams.get('transferToken') || '';
+    let licenseTransferRequestId = pageParams.get('licenseTransferRequestId') || '';
+    let licenseTransferToken = pageParams.get('licenseTransferToken') || '';
+    const authHint = (pageParams.get('auth') || '').toLowerCase();
+    const routerFlowHint = {
+      routerName: (pageParams.get('routerName') || '').trim(),
+      routerId: (pageParams.get('routerId') || '').trim(),
+      licenseKey: (pageParams.get('licenseKey') || '').trim(),
+      bindCode: (pageParams.get('bindCode') || '').trim(),
+      gatewayIp: (pageParams.get('gatewayIp') || '').trim(),
+      routerRegisterUrl: (pageParams.get('routerRegisterUrl') || '').trim()
+    };
+    const routerActivatedFlag = (pageParams.get('routerActivated') || '').trim();
+    const routerActivationError = (pageParams.get('routerActivationError') || '').trim();
+    const routerActivationRetry = (pageParams.get('retryAfter') || '').trim();
+
+    function clearResetTokenFromUrl() {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('resetToken');
+      const next = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
+      window.history.replaceState({}, '', next);
+    }
+
+    function clearTransferAcceptFromUrl() {
+      const url = new URL(window.location.href);
+      ['transferRequestId', 'transferToken'].forEach((key) => url.searchParams.delete(key));
+      const next = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
+      window.history.replaceState({}, '', next);
+    }
+
+    function clearLicenseTransferAcceptFromUrl() {
+      const url = new URL(window.location.href);
+      ['licenseTransferRequestId', 'licenseTransferToken'].forEach((key) => url.searchParams.delete(key));
+      const next = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
+      window.history.replaceState({}, '', next);
+    }
+
+    function clearRouterFlowHintsFromUrl() {
+      const url = new URL(window.location.href);
+      ['auth', 'routerName', 'routerId', 'licenseKey', 'bindCode', 'gatewayIp', 'routerRegisterUrl'].forEach((key) => url.searchParams.delete(key));
+      const next = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
+      window.history.replaceState({}, '', next);
+    }
+
+    function clearRouterActivationResultFromUrl() {
+      const url = new URL(window.location.href);
+      ['routerActivated', 'routerActivationError', 'retryAfter'].forEach((key) => url.searchParams.delete(key));
+      const next = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
+      window.history.replaceState({}, '', next);
+    }
+
+    function clearAuthMessages() {
+      ['loginError', 'registerError', 'forgotError', 'resetError', 'resetMsg', 'loginHint'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '';
+      });
+    }
+
+    function hasTransferAcceptPending() {
+      return Boolean(transferRequestId && transferToken);
+    }
+
+    function hasLicenseTransferAcceptPending() {
+      return Boolean(licenseTransferRequestId && licenseTransferToken);
+    }
+
+    function setAuthView(view) {
+      const titleMap = {
+        login: 'Log in',
+        register: 'Create account',
+        forgot: 'Forgot password',
+        reset: 'Reset password'
+      };
+      const showTabs = view === 'login' || view === 'register';
+      const tabsWrap = document.querySelector('.auth-tabs');
+      if (tabsWrap) tabsWrap.classList.toggle('hidden', !showTabs);
+
+      document.querySelectorAll('.auth-tab').forEach((b) => b.classList.remove('active'));
+      if (showTabs) {
+        const tab = document.querySelector(`.auth-tab[data-tab="${view}"]`);
+        if (tab) tab.classList.add('active');
+      }
+
+      document.querySelectorAll('.auth-form').forEach((f) => f.classList.remove('active'));
+      const form = document.getElementById(view + 'Form');
+      if (form) form.classList.add('active');
+      document.getElementById('authTitle').textContent = titleMap[view] || 'Log in';
+      clearAuthMessages();
+      if (view === 'login') showLoginHintForTransfer();
+    }
+
+    function hasRouterFlowHint() {
+      return Boolean(routerFlowHint.routerId || routerFlowHint.licenseKey || routerFlowHint.bindCode);
+    }
+
+    function defaultRouterNameFromId(routerId) {
+      const clean = String(routerId || '').toUpperCase().replace(/[^A-F0-9]/g, '');
+      const suffix = clean.length >= 4 ? clean.slice(-4) : '0000';
+      return 'My Router-' + suffix;
+    }
+
+    function getCurrentBindCode() {
+      return (document.getElementById('bindCodeDisplay')?.textContent || '').trim();
+    }
+
+    function hasCurrentBindCode() {
+      const code = getCurrentBindCode();
+      return Boolean(code && code !== '000000');
+    }
+
+    function getRouterActivationUrl() {
+      const raw = routerFlowHint.routerRegisterUrl;
+      if (raw) {
+        try {
+          const parsed = new URL(raw, window.location.href);
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return parsed.toString();
+          }
+        } catch (_) {}
+      }
+      if (routerFlowHint.gatewayIp) {
+        return 'http://' + routerFlowHint.gatewayIp + ':2080/register.html';
+      }
+      return '';
+    }
+
+    function getRouterActivateUrl() {
+      const regUrl = getRouterActivationUrl();
+      if (!regUrl) return '';
+      try {
+        const parsed = new URL(regUrl, window.location.href);
+        return parsed.origin + '/cgi-bin/icxifi/activate';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    function canActivateFromDashboard() {
+      return Boolean(getRouterActivateUrl());
+    }
+
+    function triggerRouterActivationFromDashboard() {
+      const routerId = (document.getElementById('regRouterId')?.value || '').trim();
+      const routerNameInput = (document.getElementById('regRouterName')?.value || '').trim();
+      const routerName = routerNameInput || routerFlowHint.routerName || defaultRouterNameFromId(routerId);
+      const licenseKey = (document.getElementById('regLicenseKey')?.value || '').trim();
+      const bindCode = getCurrentBindCode();
+
+      if (!licenseKey) { toast('Select a license key', 'error'); return; }
+      if (!bindCode || bindCode === '000000') { toast('Bind code missing. Open this page from router register.', 'error'); return; }
+
+      const activateUrl = getRouterActivateUrl();
+      if (!activateUrl) {
+        toast('Direct activation unavailable. Open from router registration first.', 'error');
+        return;
+      }
+
+      const returnUrlObj = new URL(window.location.href);
+      ['routerActivated', 'routerActivationError', 'retryAfter'].forEach((k) => returnUrlObj.searchParams.delete(k));
+      const returnUrl = returnUrlObj.toString();
+      const params = new URLSearchParams({
+        routerName,
+        licenseKey,
+        bindCode,
+        returnUrl
+      });
+
+      // Use top-level GET navigation to avoid browser mixed-content form blocking.
+      const joiner = activateUrl.includes('?') ? '&' : '?';
+      window.location.href = activateUrl + joiner + params.toString();
+    }
+
+    function showRouterActivationResultToast() {
+      if (routerActivatedFlag === '1') {
+        toast('Router activated successfully.', 'success');
+        const routersNav = document.querySelector('.nav-link[data-page="routers"]');
+        if (routersNav) routersNav.click();
+        loadRouters({ force: true });
+        clearRouterFlowHintsFromUrl();
+      } else if (routerActivationError) {
+        if (routerActivationError === 'cooldown') {
+          const wait = Number(routerActivationRetry);
+          toast('Activation cooldown. Retry in ' + (Number.isFinite(wait) ? wait : '?') + 's.', 'error');
+        } else if (routerActivationError === 'missing_fields') {
+          toast('Activation failed: missing fields.', 'error');
+        } else {
+          toast('Activation failed. Regenerate bind code on router page and retry.', 'error');
+        }
+      } else {
+        return;
+      }
+      clearRouterActivationResultFromUrl();
+    }
+
+    function renderRouterActivationHint() {
+      const wrap = document.getElementById('routerActivationHint');
+      const btn = document.getElementById('openRouterActivate');
+      const activateBtn = document.getElementById('activateRouterHere');
+      const manual = document.getElementById('routerActivationManual');
+      if (!wrap || !btn || !activateBtn || !manual) return;
+
+      if (!hasRouterFlowHint()) {
+        wrap.style.display = 'none';
+        activateBtn.disabled = true;
+        return;
+      }
+
+      wrap.style.display = 'block';
+      const target = getRouterActivationUrl();
+      activateBtn.disabled = !canActivateFromDashboard() || !hasCurrentBindCode();
+      if (target) {
+        btn.style.display = 'inline-flex';
+        btn.dataset.target = target;
+        manual.style.display = 'none';
+      } else {
+        btn.style.display = 'none';
+        manual.style.display = 'inline';
+        manual.textContent = 'Open router page manually: http://10.0.0.1:2080/register.html';
+      }
+    }
+
+    function applyRouterFlowHint() {
+      if (!hasRouterFlowHint()) return;
+      const routerNameInput = document.getElementById('regRouterName');
+      const routerIdInput = document.getElementById('regRouterId');
+      const licenseSelect = document.getElementById('regLicenseKey');
+      if (routerNameInput && routerFlowHint.routerName && !routerNameInput.value) {
+        routerNameInput.value = routerFlowHint.routerName;
+      }
+      if (routerIdInput && routerFlowHint.routerId && !routerIdInput.value) {
+        routerIdInput.value = routerFlowHint.routerId;
+      }
+      if (routerNameInput && !routerNameInput.value && routerIdInput && routerIdInput.value) {
+        routerNameInput.value = defaultRouterNameFromId(routerIdInput.value);
+      }
+      if (licenseSelect && routerFlowHint.licenseKey) {
+        const found = Array.from(licenseSelect.options).some((opt) => opt.value === routerFlowHint.licenseKey);
+        if (found) {
+          licenseSelect.value = routerFlowHint.licenseKey;
+        }
+      }
+      if (routerFlowHint.bindCode) {
+        const bindResult = document.getElementById('bindResult');
+        const bindCodeDisplay = document.getElementById('bindCodeDisplay');
+        if (bindResult && bindCodeDisplay) {
+          bindCodeDisplay.textContent = routerFlowHint.bindCode;
+          bindResult.style.display = 'block';
+        }
+      }
+      renderRouterActivationHint();
+    }
+
+    function openRoutersFromRouterFlow() {
+      if (!hasRouterFlowHint()) return;
+      const routersNav = document.querySelector('.nav-link[data-page="routers"]');
+      if (routersNav) routersNav.click();
+      toast('Tap Activate Router Here to complete activation.');
+    }
+
+    function showLoginHintForTransfer() {
+      if (!hasTransferAcceptPending() && !hasLicenseTransferAcceptPending()) return;
+      const hintEl = document.getElementById('loginHint');
+      if (hintEl) hintEl.textContent = 'Log in to accept pending transfer request.';
+    }
+
+    function setLicenseTransferPendingBadge(count) {
+      const badge = document.getElementById('licenseTransferPendingBadge');
+      if (!badge) return;
+      const safe = Math.max(0, Number(count) || 0);
+      badge.textContent = safe > 99 ? '99+' : String(safe);
+      badge.classList.toggle('show', safe > 0);
+    }
+
+    async function refreshLicenseTransferPendingBadge() {
+      try {
+        const res = await api('/api/client/license-transfers?scope=incoming&status=pending&limit=300');
+        if (res._authFail) return;
+        const count = Array.isArray(res.transfers) ? res.transfers.length : 0;
+        setLicenseTransferPendingBadge(count);
+      } catch (_) {}
+    }
+
+    async function notifyPendingInternalTransfers() {
+      try {
+        const [routerRes, licenseRes] = await Promise.all([
+          api('/api/client/transfers?scope=incoming&status=pending&limit=20'),
+          api('/api/client/license-transfers?scope=incoming&status=pending&limit=20')
+        ]);
+        if (routerRes._authFail || licenseRes._authFail) return;
+        const routerCount = Array.isArray(routerRes.transfers) ? routerRes.transfers.length : 0;
+        const licenseCount = Array.isArray(licenseRes.transfers) ? licenseRes.transfers.length : 0;
+        setLicenseTransferPendingBadge(licenseCount);
+        const total = routerCount + licenseCount;
+        if (total > 0) {
+          toast('You have ' + total + ' pending transfer request(s).');
+        }
+      } catch (_) {}
+    }
+
+    function showAppShell() {
+      document.getElementById('authPage').classList.add('hidden');
+      document.getElementById('app').classList.add('visible');
+      load();
+      openRoutersFromRouterFlow();
+      showRouterActivationResultToast();
+      void maybeAcceptTransferFromUrl();
+      void maybeAcceptLicenseTransferFromUrl();
+      void notifyPendingInternalTransfers();
+    }
+
+    document.querySelectorAll('.auth-tab').forEach(btn => {
+      btn.onclick = () => {
+        setAuthView(btn.dataset.tab);
+      };
+    });
+    document.getElementById('showForgotBtn').onclick = () => setAuthView('forgot');
+    document.getElementById('backToLoginBtn').onclick = () => setAuthView('login');
+    document.getElementById('backFromResetBtn').onclick = () => {
+      resetToken = '';
+      clearResetTokenFromUrl();
+      setAuthView('login');
+    };
+
+    document.getElementById('loginForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const err = document.getElementById('loginError');
+      err.textContent = '';
+      try {
+        const res = await fetch(API + '/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: form.email.value.trim(), password: form.password.value })
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || 'Login failed');
+        if (!j.token) throw new Error('No token');
+        setToken(j.token);
+        showAppShell();
+      } catch (x) {
+        err.textContent = x.message || 'Invalid credentials';
+      }
+    };
+
+    document.getElementById('forgotForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const err = document.getElementById('forgotError');
+      err.textContent = '';
+      try {
+        const res = await fetch(API + '/api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: form.email.value.trim() })
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || 'Request failed');
+        form.reset();
+        toast('Email sent successfully! Please check your email.', 'success');
+        setAuthView('login');
+      } catch (x) {
+        err.textContent = x.message || 'Request failed';
+      }
+    };
+
+    document.getElementById('resetForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const err = document.getElementById('resetError');
+      const msg = document.getElementById('resetMsg');
+      err.textContent = '';
+      msg.textContent = '';
+      const password = form.password.value;
+      const confirmPassword = form.confirmPassword.value;
+      if (password.length < 6) {
+        err.textContent = 'Password must be at least 6 characters';
+        return;
+      }
+      if (password !== confirmPassword) {
+        err.textContent = 'Passwords do not match';
+        return;
+      }
+      if (!resetToken) {
+        err.textContent = 'Missing reset token';
+        return;
+      }
+      try {
+        const res = await fetch(API + '/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: resetToken, password })
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || 'Reset failed');
+        msg.textContent = j.message || 'Password reset successful. Please log in.';
+        form.reset();
+        resetToken = '';
+        clearResetTokenFromUrl();
+        setTimeout(() => setAuthView('login'), 1200);
+      } catch (x) {
+        err.textContent = x.message || 'Reset failed';
+      }
+    };
+
+    document.getElementById('registerForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const err = document.getElementById('registerError');
+      err.textContent = '';
+      try {
+        const res = await fetch(API + '/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: form.name.value.trim(),
+            email: form.email.value.trim(),
+            password: form.password.value
+          })
+        });
+        const j = await res.json();
+        if (!res.ok) throw new Error(j.error || 'Registration failed');
+        if (!j.token) throw new Error('No token');
+        setToken(j.token);
+        showAppShell();
+      } catch (x) {
+        err.textContent = x.message || 'Registration failed';
+      }
+    };
+
+    document.getElementById('logoutBtn').onclick = () => { clearToken(); location.reload(); };
+
+    document.querySelectorAll('.nav-link').forEach(a => {
+      a.onclick = (e) => {
+        e.preventDefault();
+        document.querySelectorAll('.nav-link').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+        a.classList.add('active');
+        const page = a.dataset.page.charAt(0).toUpperCase() + a.dataset.page.slice(1);
+        document.getElementById('page' + page).classList.add('active');
+        if (a.dataset.page === 'dashboard') loadDashboard();
+        if (a.dataset.page === 'license') loadLicense({ force: true });
+        if (a.dataset.page === 'routers') loadRouters();
+        if (a.dataset.page === 'vouchers') { loadRoutersForVouchers(); loadVouchers(); }
+        if (a.dataset.page === 'sales') loadSales();
+      };
+    });
+    document.querySelectorAll('[data-goto]').forEach(el => {
+      el.onclick = (e) => { e.preventDefault(); document.querySelector(`[data-page="${el.dataset.goto}"]`)?.click(); };
+    });
+
+    let _me = null;
+    let _revenueChart = null;
+    let _salesChart = null;
+    let _meLoadedAt = 0;
+    let _routersCache = null;
+    let _routersLoadedAt = 0;
+    let _routersById = Object.create(null);
+    let _routerMenuRouterId = '';
+    let _chartLoaderPromise = null;
+    const CACHE_TTL_MS = 15000;
+    const ROUTER_RATE_DEFAULTS = [
+      { amount: 5, minutes: 15, downloadKbps: 10000, uploadKbps: 10000 },
+      { amount: 10, minutes: 35, downloadKbps: 10000, uploadKbps: 10000 },
+      { amount: 20, minutes: 90, downloadKbps: 10000, uploadKbps: 10000 }
+    ];
+
+    function positiveNumber(value) {
+      const n = Number(value);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+
+    function calibrationPercent(value, fallback = 100) {
+      if (value === '' || value === null || value === undefined) return fallback;
+      const n = Number(value);
+      if (!Number.isFinite(n)) return null;
+      const rounded = Math.round(n);
+      if (rounded < 50 || rounded > 150) return null;
+      return rounded;
+    }
+
+    function buildRouterRateRow(rate = {}) {
+      const amount = positiveNumber(rate.amount) || '';
+      const totalMinutesRaw = positiveNumber(rate.minutes) || 0;
+      const totalMinutes = Math.max(0, Math.floor(totalMinutesRaw));
+      const hours = Math.floor(totalMinutes / 60);
+      const minutesPart = totalMinutes % 60;
+      const dlMbps = ((positiveNumber(rate.downloadKbps) || 10000) / 1000).toFixed(1);
+      const ulMbps = ((positiveNumber(rate.uploadKbps) || 10000) / 1000).toFixed(1);
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="number" min="0.01" step="0.01" data-rate="amount" value="${amount}"></td>
+        <td><input type="number" min="0" step="1" data-rate="hours" value="${hours}"></td>
+        <td><input type="number" min="0" max="59" step="1" data-rate="minutesPart" value="${minutesPart}"></td>
+        <td><input type="number" min="0.1" step="0.1" data-rate="downloadMbps" value="${dlMbps}"></td>
+        <td><input type="number" min="0.1" step="0.1" data-rate="uploadMbps" value="${ulMbps}"></td>
+        <td><button type="button" class="router-rate-remove" title="Remove rate">x</button></td>
+      `;
+      tr.querySelector('.router-rate-remove')?.addEventListener('click', () => {
+        const body = document.getElementById('routerEditRatesBody');
+        if (!body) return;
+        tr.remove();
+        if (!body.querySelector('tr')) {
+          body.appendChild(buildRouterRateRow(ROUTER_RATE_DEFAULTS[0]));
+        }
+      });
+      return tr;
+    }
+
+    function renderRouterRateEditor(rates) {
+      const body = document.getElementById('routerEditRatesBody');
+      if (!body) return;
+      body.innerHTML = '';
+      const list = Array.isArray(rates) && rates.length ? rates : ROUTER_RATE_DEFAULTS;
+      list.forEach((rate) => body.appendChild(buildRouterRateRow(rate)));
+    }
+
+    function collectRouterRateEditor() {
+      const rows = Array.from(document.querySelectorAll('#routerEditRatesBody tr'));
+      if (!rows.length) {
+        throw new Error('At least one rate is required');
+      }
+      const rates = rows.map((row) => {
+        const amount = positiveNumber(row.querySelector('input[data-rate="amount"]')?.value);
+        const hoursRaw = row.querySelector('input[data-rate="hours"]')?.value;
+        const minutesPartRaw = row.querySelector('input[data-rate="minutesPart"]')?.value;
+        const hours = Number(hoursRaw);
+        const minutesPart = Number(minutesPartRaw);
+        const downloadMbps = positiveNumber(row.querySelector('input[data-rate="downloadMbps"]')?.value);
+        const uploadMbps = positiveNumber(row.querySelector('input[data-rate="uploadMbps"]')?.value);
+
+        if (!amount || !Number.isFinite(hours) || hours < 0 || !Number.isInteger(hours)) {
+          throw new Error('Hours must be a whole number 0 or higher');
+        }
+        if (!Number.isFinite(minutesPart) || minutesPart < 0 || minutesPart > 59 || !Number.isInteger(minutesPart)) {
+          throw new Error('Minutes must be a whole number from 0 to 59');
+        }
+        const totalMinutes = hours * 60 + minutesPart;
+        if (totalMinutes <= 0) {
+          throw new Error('Time must be at least 1 minute');
+        }
+        if (!downloadMbps || !uploadMbps) {
+          throw new Error('DL/UL Mbps must be positive numbers');
+        }
+        const downloadKbps = Math.max(1, Math.round(downloadMbps * 1000));
+        const uploadKbps = Math.max(1, Math.round(uploadMbps * 1000));
+        return { amount, minutes: totalMinutes, downloadKbps, uploadKbps };
+      });
+      return rates;
+    }
+
+    async function ensureChartJs() {
+      if (window.Chart) return true;
+      if (_chartLoaderPromise) return _chartLoaderPromise;
+      _chartLoaderPromise = new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+        script.async = true;
+        script.onload = () => resolve(Boolean(window.Chart));
+        script.onerror = () => resolve(false);
+        document.head.appendChild(script);
+      });
+      return _chartLoaderPromise;
+    }
+
+    async function getMe({ force = false } = {}) {
+      if (!force && _me && (Date.now() - _meLoadedAt) < CACHE_TTL_MS) {
+        return _me;
+      }
+      const res = await api('/api/client/me');
+      if (!res._authFail) {
+        _me = res;
+        _meLoadedAt = Date.now();
+      }
+      return res;
+    }
+
+    async function getRouters({ force = false } = {}) {
+      if (!force && _routersCache && (Date.now() - _routersLoadedAt) < CACHE_TTL_MS) {
+        return _routersCache;
+      }
+      const res = await api('/api/client/routers');
+      if (!res._authFail) {
+        _routersCache = res;
+        _routersLoadedAt = Date.now();
+      }
+      return res;
+    }
+
+    async function loadDashboard({ force = false } = {}) {
+      try {
+        const [meRes, revRes] = await Promise.all([
+          getMe({ force }),
+          api('/api/client/reports/revenue')
+        ]);
+        if (meRes._authFail) return;
+        const lic = meRes.license || {};
+        document.getElementById('licAvailable').textContent = lic.availableSlots ?? 0;
+        document.getElementById('licUsed').textContent = lic.usedCount ?? 0;
+        if (revRes && !revRes._authFail) {
+          document.getElementById('revDaily').textContent = '₱ ' + (revRes.daily || 0);
+          document.getElementById('revWeekly').textContent = '₱ ' + (revRes.weekly || 0);
+          document.getElementById('revMonthly').textContent = '₱ ' + (revRes.monthly || 0);
+          document.getElementById('revYearly').textContent = '₱ ' + (revRes.yearly || 0);
+        }
+        const canChart = await ensureChartJs();
+        const chartRes = canChart ? await api('/api/client/reports/revenue-chart?days=30') : null;
+        if (chartRes && !chartRes._authFail && Chart) {
+          if (_revenueChart) _revenueChart.destroy();
+          const ctx = document.getElementById('revenueChart')?.getContext('2d');
+          if (ctx) {
+            _revenueChart = new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: (chartRes.labels || []).map((l) => l.slice(5)),
+                datasets: [{ label: 'Revenue (₱)', data: chartRes.values || [], backgroundColor: 'rgba(143, 207, 255, 0.35)', borderColor: 'rgba(143, 207, 255, 0.6)', borderWidth: 1 }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                  x: { ticks: { color: '#a3aebc', maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.06)' } },
+                  y: { ticks: { color: '#a3aebc' }, grid: { color: 'rgba(255,255,255,0.06)' }, beginAtZero: true }
+                }
+              }
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    async function loadLicense({ force = false } = {}) {
+      try {
+        const res = await getMe({ force });
+        if (res._authFail) return;
+
+        const lic = res.license || {};
+        document.getElementById('licPageAvailable').textContent = lic.availableSlots ?? 0;
+        document.getElementById('licPageUsed').textContent = lic.usedCount ?? 0;
+
+        // Fallback source (always available via /api/client/me)
+        let keys = Array.isArray(lic.licenses)
+          ? lic.licenses.map((k) => ({
+            key: k && k.key ? String(k.key) : '',
+            inUse: null,
+            inUseByRouterName: '',
+            inUseByRouterId: ''
+          }))
+          : [];
+
+        // Preferred source (includes in-use router details)
+        try {
+          const licensesRes = await api('/api/client/licenses');
+          if (!licensesRes._authFail && Array.isArray(licensesRes.licenses)) {
+            keys = licensesRes.licenses;
+          }
+        } catch (_) {}
+
+        const rowsEl = document.getElementById('licenseRows');
+        rowsEl.innerHTML = keys.length
+          ? keys.map((k) => {
+            const hasUseFlag = typeof k.inUse === 'boolean';
+            const inUse = hasUseFlag ? Boolean(k.inUse) : false;
+            const status = hasUseFlag
+              ? (inUse ? '<span class="badge offline">In use</span>' : '<span class="badge active">Available</span>')
+              : '<span class="badge offline">Unknown</span>';
+            const attached = inUse
+              ? escapeHtml(k.inUseByRouterName || k.inUseByRouterId || '-')
+              : '<span class="muted">-</span>';
+            const canTransfer = !inUse || !hasUseFlag;
+            const action = canTransfer
+              ? `<button type="button" class="btn-sm" data-license-action="transfer" data-license-key="${encodeURIComponent(k.key || '')}">Transfer</button>`
+              : '<span class="muted">Transfer from Router menu</span>';
+            return `
+              <tr>
+                <td class="mono">${escapeHtml(k.key || '-')}</td>
+                <td>${status}</td>
+                <td>${attached}</td>
+                <td>${action}</td>
+              </tr>
+            `;
+          }).join('')
+          : '<tr><td colspan="4" class="empty">No licenses assigned yet.</td></tr>';
+
+        const el = document.getElementById('licenseKeysPage');
+        el.innerHTML = keys.length
+          ? '<strong style="font-size:0.85rem;color:var(--muted)">All license keys:</strong>' + keys.map(k => `<div class="key">${(k.key || '').replace(/</g, '&lt;')}</div>`).join('')
+          : '<p class="muted">No licenses assigned yet. Ask admin to assign licenses to your account.</p>';
+
+        await refreshLicenseTransferPendingBadge();
+      } catch (_) {}
+    }
+
+    async function loadSales({ force = false } = {}) {
+      try {
+        const [revRes, txnRes, routersRes] = await Promise.all([
+          api('/api/client/reports/revenue'),
+          api('/api/client/reports/transactions?limit=100'),
+          getRouters({ force })
+        ]);
+        if (revRes && !revRes._authFail) {
+          document.getElementById('salesRevDaily').textContent = '₱ ' + (revRes.daily || 0);
+          document.getElementById('salesRevWeekly').textContent = '₱ ' + (revRes.weekly || 0);
+          document.getElementById('salesRevMonthly').textContent = '₱ ' + (revRes.monthly || 0);
+          document.getElementById('salesRevYearly').textContent = '₱ ' + (revRes.yearly || 0);
+        }
+        const canChart = await ensureChartJs();
+        const chartRes = canChart ? await api('/api/client/reports/revenue-chart?days=30') : null;
+        if (chartRes && !chartRes._authFail && Chart) {
+          if (_salesChart) _salesChart.destroy();
+          const ctx = document.getElementById('salesRevenueChart')?.getContext('2d');
+          if (ctx) {
+            _salesChart = new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: (chartRes.labels || []).map((l) => l.slice(5)),
+                datasets: [{ label: 'Revenue (₱)', data: chartRes.values || [], backgroundColor: 'rgba(143, 207, 255, 0.35)', borderColor: 'rgba(143, 207, 255, 0.6)', borderWidth: 1 }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                  x: { ticks: { color: '#a3aebc', maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.06)' } },
+                  y: { ticks: { color: '#a3aebc' }, grid: { color: 'rgba(255,255,255,0.06)' }, beginAtZero: true }
+                }
+              }
+            });
+          }
+        }
+        if (txnRes && !txnRes._authFail) {
+          const txns = txnRes.transactions || [];
+          const routerMap = {};
+          (routersRes?.routers || []).forEach(r => { routerMap[r.routerId] = r.name || r.routerId; });
+          const rb = document.getElementById('salesTransactions');
+          rb.innerHTML = txns.length ? txns.map((t, i) => `<tr><td>${i+1}</td><td class="mono">${(routerMap[t.routerId] || t.routerId || '-').replace(/</g, '&lt;')}</td><td class="mono">${(t.clientDevice || '-').replace(/</g, '&lt;')}</td><td>₱ ${t.amount}</td><td>${t.method || '-'}</td><td>${fmt(t.date)}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">No transactions</td></tr>';
+        }
+      } catch (_) {}
+    }
+    async function clearSalesHistory() {
+      if (!confirm('Clear all transaction history? This cannot be undone.')) return;
+      try {
+        const res = await api('/api/client/reports/transactions/clear', { method: 'POST' });
+        if (res._authFail) return;
+        if (res.ok) {
+          toast(res.message || 'Transaction history cleared');
+          loadSales();
+        } else throw new Error(res.error);
+      } catch (x) { toast(x.message || 'Failed', 'error'); }
+    }
+
+    function invalidateRouterCache() {
+      _routersCache = null;
+      _routersLoadedAt = 0;
+    }
+
+    async function refreshRouterViews() {
+      invalidateRouterCache();
+      await Promise.all([
+        loadRouters({ force: true }),
+        loadRoutersForVouchers({ force: true })
+      ]);
+    }
+
+    function closeRouterMenuModal() {
+      _routerMenuRouterId = '';
+      document.getElementById('routerMenuModal')?.classList.remove('open');
+    }
+
+    function openRouterMenuModal(routerId) {
+      const router = _routersById[routerId];
+      if (!router) {
+        toast('Router not found', 'error');
+        return;
+      }
+      _routerMenuRouterId = routerId;
+      document.getElementById('routerMenuTitle').textContent = 'Actions: ' + (router.name || router.routerId || 'Router');
+      const btn = document.getElementById('routerMenuToggleStatusBtn');
+      if (btn) {
+        const makeInactive = router.status === 'active';
+        btn.textContent = makeInactive ? 'Make Inactive' : 'Make Active';
+        btn.classList.toggle('danger', makeInactive);
+      }
+      const licenseBtn = document.getElementById('routerMenuLicenseBtn');
+      if (licenseBtn) {
+        const hasLicense = Boolean((router.licenseKey || '').trim());
+        licenseBtn.dataset.menuAction = hasLicense ? 'remove-license' : 'add-license';
+        licenseBtn.textContent = hasLicense ? 'Remove License' : 'Add License';
+        licenseBtn.classList.toggle('danger', hasLicense);
+      }
+      const unbindBtn = document.getElementById('routerMenuUnbindBtn');
+      if (unbindBtn) {
+        const hasLicense = Boolean((router.licenseKey || '').trim());
+        unbindBtn.disabled = hasLicense;
+        unbindBtn.textContent = hasLicense ? 'Unbind Router (remove license first)' : 'Unbind Router';
+      }
+      document.getElementById('routerMenuModal')?.classList.add('open');
+    }
+
+    function closeRouterEditModal() {
+      document.getElementById('routerEditModal')?.classList.remove('open');
+      const form = document.getElementById('routerEditForm');
+      if (form) form.reset();
+      const ratesBody = document.getElementById('routerEditRatesBody');
+      if (ratesBody) ratesBody.innerHTML = '';
+      setSeparateBandsUi(false);
+    }
+
+    function setSeparateBandsUi(enabled) {
+      const on = Boolean(enabled);
+      const ssid24Row = document.getElementById('routerEditSsid24Row');
+      const ssid5Row = document.getElementById('routerEditSsid5Row');
+      if (ssid24Row) ssid24Row.style.display = on ? '' : 'none';
+      if (ssid5Row) ssid5Row.style.display = on ? '' : 'none';
+    }
+
+    function closeLicensePickerModal() {
+      document.getElementById('licensePickerModal')?.classList.remove('open');
+      const form = document.getElementById('licensePickerForm');
+      if (form) form.reset();
+      document.getElementById('licensePickerRouterId').value = '';
+      document.getElementById('licensePickerAction').value = '';
+      document.getElementById('licensePickerSelect').innerHTML = '';
+    }
+
+    function closeTransferRequestModal() {
+      document.getElementById('transferRequestModal')?.classList.remove('open');
+      const form = document.getElementById('transferRequestForm');
+      if (form) form.reset();
+      document.getElementById('transferRequestRouterId').value = '';
+      const err = document.getElementById('transferRequestError');
+      if (err) err.textContent = '';
+    }
+
+    function closeTransferCenterModal() {
+      document.getElementById('transferCenterModal')?.classList.remove('open');
+    }
+
+    async function openTransferCenterModal() {
+      document.getElementById('transferCenterModal')?.classList.add('open');
+      await loadTransferCenter();
+    }
+
+    function closeLicenseTransferRequestModal() {
+      document.getElementById('licenseTransferRequestModal')?.classList.remove('open');
+      const form = document.getElementById('licenseTransferRequestForm');
+      if (form) form.reset();
+      document.getElementById('licenseTransferRequestKey').value = '';
+      const err = document.getElementById('licenseTransferRequestError');
+      if (err) err.textContent = '';
+    }
+
+    function openLicenseTransferRequestModal(licenseKey) {
+      const key = String(licenseKey || '').trim();
+      if (!key) {
+        toast('Invalid license key', 'error');
+        return false;
+      }
+      document.getElementById('licenseTransferRequestTitle').textContent = 'Transfer License: ' + key;
+      document.getElementById('licenseTransferRequestKey').value = key;
+      document.getElementById('licenseTransferRequestTargetEmail').value = '';
+      const err = document.getElementById('licenseTransferRequestError');
+      if (err) err.textContent = '';
+      document.getElementById('licenseTransferRequestModal')?.classList.add('open');
+      return true;
+    }
+
+    function closeLicenseTransferCenterModal() {
+      document.getElementById('licenseTransferCenterModal')?.classList.remove('open');
+    }
+
+    async function openLicenseTransferCenterModal() {
+      document.getElementById('licenseTransferCenterModal')?.classList.add('open');
+      await loadLicenseTransferCenter();
+    }
+
+    function openTransferRequestModal(routerId) {
+      const router = _routersById[routerId];
+      if (!router) {
+        toast('Router not found', 'error');
+        return false;
+      }
+      if (!(router.licenseKey || '').trim()) {
+        toast('Attach a license before transfer', 'error');
+        return false;
+      }
+      document.getElementById('transferRequestTitle').textContent = 'Transfer Router: ' + (router.name || router.routerId || 'Router');
+      document.getElementById('transferRequestRouterId').value = routerId;
+      document.getElementById('transferRequestTargetEmail').value = '';
+      const err = document.getElementById('transferRequestError');
+      if (err) err.textContent = '';
+      document.getElementById('transferRequestModal')?.classList.add('open');
+      return true;
+    }
+
+    function openRouterEditModal(routerId) {
+      const router = _routersById[routerId];
+      if (!router) {
+        toast('Router not found', 'error');
+        return;
+      }
+      document.getElementById('routerEditTitle').textContent = 'Edit Router: ' + (router.routerId || '-');
+      document.getElementById('routerEditRouterId').value = router.routerId || '';
+      document.getElementById('routerEditName').value = router.name || '';
+      document.getElementById('routerEditDescription').value = router.description || '';
+      document.getElementById('routerEditSsid').value = (router.hotspot && router.hotspot.ssid) || '';
+      document.getElementById('routerEditSeparateBands').checked = Boolean(router.hotspot && router.hotspot.separateBands);
+      document.getElementById('routerEditSsid24').value = (router.hotspot && router.hotspot.ssid24) || (router.hotspot && router.hotspot.ssid) || '';
+      document.getElementById('routerEditSsid5').value = (router.hotspot && router.hotspot.ssid5) || (router.hotspot && router.hotspot.ssid) || '';
+      document.getElementById('routerEditWelcomeMsg').value = (router.hotspot && router.hotspot.welcomeMsg) || '';
+      document.getElementById('routerEditDlCalib').value = calibrationPercent(router?.profile?.speedCalibration?.downloadPercent, 100) ?? 100;
+      document.getElementById('routerEditUlCalib').value = calibrationPercent(router?.profile?.speedCalibration?.uploadPercent, 100) ?? 100;
+      setSeparateBandsUi(Boolean(router.hotspot && router.hotspot.separateBands));
+      renderRouterRateEditor((router.profile && router.profile.rates) || []);
+      document.getElementById('routerEditModal')?.classList.add('open');
+    }
+
+    async function saveRouterEdit(event) {
+      event.preventDefault();
+      const routerId = (document.getElementById('routerEditRouterId')?.value || '').trim();
+      const name = (document.getElementById('routerEditName')?.value || '').trim();
+      const description = (document.getElementById('routerEditDescription')?.value || '').trim();
+      const ssid = (document.getElementById('routerEditSsid')?.value || '').trim();
+      const separateBands = Boolean(document.getElementById('routerEditSeparateBands')?.checked);
+      const ssid24 = (document.getElementById('routerEditSsid24')?.value || '').trim();
+      const ssid5 = (document.getElementById('routerEditSsid5')?.value || '').trim();
+      const welcomeMsg = (document.getElementById('routerEditWelcomeMsg')?.value || '').trim();
+      const dlCalib = calibrationPercent(document.getElementById('routerEditDlCalib')?.value, 100);
+      const ulCalib = calibrationPercent(document.getElementById('routerEditUlCalib')?.value, 100);
+      if (!routerId) {
+        toast('Missing router ID', 'error');
+        return;
+      }
+      if (!name) {
+        toast('Router name is required', 'error');
+        return;
+      }
+      if (!ssid) {
+        toast('Local SSID is required', 'error');
+        return;
+      }
+      if (separateBands && (!ssid24 || !ssid5)) {
+        toast('SSID 2.4G and SSID 5G are required when separation is ON', 'error');
+        return;
+      }
+      if (dlCalib === null || ulCalib === null) {
+        toast('Calibration must be whole numbers from 50 to 150', 'error');
+        return;
+      }
+
+      let rates = [];
+      try {
+        rates = collectRouterRateEditor();
+      } catch (err) {
+        toast(err.message || 'Invalid rate values', 'error');
+        return;
+      }
+
+      try {
+        const res = await api('/api/client/routers/' + encodeURIComponent(routerId), {
+          method: 'PATCH',
+          body: {
+            name,
+            description,
+            hotspot: {
+              ssid: ssid || null,
+              separateBands,
+              ssid24: separateBands ? (ssid24 || null) : null,
+              ssid5: separateBands ? (ssid5 || null) : null,
+              welcomeMsg: welcomeMsg || null
+            },
+            profile: {
+              rates,
+              speedCalibration: {
+                downloadPercent: dlCalib,
+                uploadPercent: ulCalib
+              }
+            }
+          }
+        });
+        if (res._authFail) return;
+        toast('Router updated', 'success');
+        closeRouterEditModal();
+        await refreshRouterViews();
+      } catch (x) {
+        toast(x.message || 'Failed to update router', 'error');
+      }
+    }
+
+    function showRouterDetails(routerId) {
+      const r = _routersById[routerId];
+      if (!r) {
+        toast('Router not found', 'error');
+        return;
+      }
+      const details = [
+        'Router ID: ' + (r.routerId || '-'),
+        'Name: ' + (r.name || '-'),
+        'License: ' + (r.licenseKey || '-'),
+        'Status: ' + (r.status || '-'),
+        'Last seen: ' + fmt(r.lastSeenAt),
+        'Description: ' + (r.description || '-')
+      ];
+      window.alert(details.join('\n'));
+    }
+
+    function getAvailableLicenseCandidates(routerId, { includeCurrent = false } = {}) {
+      const uniqueLicenses = [];
+      const seen = new Set();
+      ((_me && _me.license && _me.license.licenses) || []).forEach((l) => {
+        const key = l && l.key ? String(l.key).trim() : '';
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        uniqueLicenses.push(key);
+      });
+      const usedByOthers = new Set(
+        Object.values(_routersById)
+          .filter((r) => r && r.routerId && r.routerId !== routerId)
+          .map((r) => (r.licenseKey || '').trim())
+          .filter(Boolean)
+      );
+      const currentKey = ((_routersById[routerId] && _routersById[routerId].licenseKey) || '').trim();
+      return uniqueLicenses.filter((key) => !usedByOthers.has(key) && (includeCurrent || key !== currentKey));
+    }
+
+    function getActivationAvailableLicenseKeys(routers, meRes) {
+      const used = new Set(
+        (routers || [])
+          .map((r) => (r && r.licenseKey ? String(r.licenseKey).trim() : ''))
+          .filter(Boolean)
+      );
+      const keys = ((meRes && meRes.license && meRes.license.licenses) || [])
+        .map((l) => (l && l.key ? String(l.key).trim() : ''))
+        .filter(Boolean);
+      const seen = new Set();
+      const out = [];
+      keys.forEach((k) => {
+        if (seen.has(k) || used.has(k)) return;
+        seen.add(k);
+        out.push(k);
+      });
+      return out;
+    }
+
+    function openLicensePickerModal({ action, routerId }) {
+      const router = _routersById[routerId];
+      if (!router) {
+        toast('Router not found', 'error');
+        return false;
+      }
+      const candidates = getAvailableLicenseCandidates(routerId, { includeCurrent: false });
+      if (!candidates.length) {
+        toast(action === 'add-license' ? 'No available license key to add' : 'No available license key to transfer', 'error');
+        return false;
+      }
+
+      const titleEl = document.getElementById('licensePickerTitle');
+      const routerIdEl = document.getElementById('licensePickerRouterId');
+      const actionEl = document.getElementById('licensePickerAction');
+      const selectEl = document.getElementById('licensePickerSelect');
+
+      titleEl.textContent = action === 'add-license'
+        ? ('Add License: ' + (router.name || router.routerId || 'Router'))
+        : ('Transfer License: ' + (router.name || router.routerId || 'Router'));
+
+      routerIdEl.value = routerId;
+      actionEl.value = action;
+      selectEl.innerHTML = candidates.map((key) => `<option value="${escapeHtml(key)}">${escapeHtml(key)}</option>`).join('');
+      document.getElementById('licensePickerModal')?.classList.add('open');
+      return true;
+    }
+
+    async function submitLicensePicker(event) {
+      event.preventDefault();
+      const routerId = (document.getElementById('licensePickerRouterId')?.value || '').trim();
+      const action = (document.getElementById('licensePickerAction')?.value || '').trim();
+      const key = (document.getElementById('licensePickerSelect')?.value || '').trim();
+      if (!routerId) {
+        toast('Router not selected', 'error');
+        return;
+      }
+      if (!key) {
+        toast('Select a license key', 'error');
+        return;
+      }
+
+      try {
+        const res = await api('/api/client/routers/' + encodeURIComponent(routerId), {
+          method: 'PATCH',
+          body: { licenseKey: key }
+        });
+        if (res._authFail) return;
+        toast(action === 'add-license' ? 'License added to router' : 'License transferred', 'success');
+        closeLicensePickerModal();
+        await refreshRouterViews();
+      } catch (x) {
+        toast(x.message || 'Action failed', 'error');
+      }
+    }
+
+    async function submitTransferRequest(event) {
+      event.preventDefault();
+      const routerId = (document.getElementById('transferRequestRouterId')?.value || '').trim();
+      const targetEmail = (document.getElementById('transferRequestTargetEmail')?.value || '').trim().toLowerCase();
+      const err = document.getElementById('transferRequestError');
+      if (err) err.textContent = '';
+      if (!routerId) {
+        if (err) err.textContent = 'Router not selected';
+        return;
+      }
+      if (!targetEmail) {
+        if (err) err.textContent = 'Target account email is required';
+        return;
+      }
+
+      try {
+        const res = await api('/api/client/routers/' + encodeURIComponent(routerId) + '/transfer-request', {
+          method: 'POST',
+          body: { targetEmail, mode: 'internal' }
+        });
+        if (res._authFail) return;
+        toast('Transfer request created for ' + targetEmail, 'success');
+        closeTransferRequestModal();
+        await loadTransferCenter();
+      } catch (x) {
+        if (err) err.textContent = x.message || 'Failed to send transfer request';
+      }
+    }
+
+    async function submitLicenseTransferRequest(event) {
+      event.preventDefault();
+      const licenseKey = (document.getElementById('licenseTransferRequestKey')?.value || '').trim();
+      const targetEmail = (document.getElementById('licenseTransferRequestTargetEmail')?.value || '').trim().toLowerCase();
+      const err = document.getElementById('licenseTransferRequestError');
+      if (err) err.textContent = '';
+      if (!licenseKey) {
+        if (err) err.textContent = 'License key is required';
+        return;
+      }
+      if (!targetEmail) {
+        if (err) err.textContent = 'Target account email is required';
+        return;
+      }
+
+      try {
+        const res = await api('/api/client/licenses/' + encodeURIComponent(licenseKey) + '/transfer-request', {
+          method: 'POST',
+          body: { targetEmail, mode: 'internal' }
+        });
+        if (res._authFail) return;
+        toast('License transfer request created for ' + targetEmail, 'success');
+        closeLicenseTransferRequestModal();
+        await Promise.all([loadLicense({ force: true }), loadLicenseTransferCenter()]);
+      } catch (x) {
+        if (err) err.textContent = x.message || 'Failed to send transfer request';
+      }
+    }
+
+    let _transferAcceptInFlight = false;
+    async function maybeAcceptTransferFromUrl() {
+      if (_transferAcceptInFlight) return;
+      if (!hasTransferAcceptPending()) return;
+      _transferAcceptInFlight = true;
+      try {
+        const res = await api('/api/client/transfers/accept', {
+          method: 'POST',
+          body: { requestId: transferRequestId, token: transferToken }
+        });
+        if (res._authFail) return;
+        if (res.ok) {
+          toast('Router transfer accepted', 'success');
+          transferRequestId = '';
+          transferToken = '';
+          clearTransferAcceptFromUrl();
+          await refreshRouterViews();
+        }
+      } catch (x) {
+        toast(x.message || 'Could not accept transfer', 'error');
+      } finally {
+        _transferAcceptInFlight = false;
+      }
+    }
+
+    let _licenseTransferAcceptInFlight = false;
+    async function maybeAcceptLicenseTransferFromUrl() {
+      if (_licenseTransferAcceptInFlight) return;
+      if (!hasLicenseTransferAcceptPending()) return;
+      _licenseTransferAcceptInFlight = true;
+      try {
+        const res = await api('/api/client/license-transfers/accept', {
+          method: 'POST',
+          body: { requestId: licenseTransferRequestId, token: licenseTransferToken }
+        });
+        if (res._authFail) return;
+        if (res.ok) {
+          toast('License transfer accepted', 'success');
+          licenseTransferRequestId = '';
+          licenseTransferToken = '';
+          clearLicenseTransferAcceptFromUrl();
+          await loadLicense({ force: true });
+        }
+      } catch (x) {
+        toast(x.message || 'Could not accept license transfer', 'error');
+      } finally {
+        _licenseTransferAcceptInFlight = false;
+      }
+    }
+
+    function transferStatusBadge(status) {
+      const s = String(status || '-').toLowerCase();
+      if (s === 'accepted') return '<span class="badge active">Accepted</span>';
+      if (s === 'pending') return '<span class="badge offline">Pending</span>';
+      if (s === 'rejected' || s === 'cancelled' || s === 'expired') return `<span class="badge disabled">${escapeHtml(s)}</span>`;
+      return `<span class="badge offline">${escapeHtml(s)}</span>`;
+    }
+
+    async function loadTransferCenter() {
+      try {
+        const res = await api('/api/client/transfers?scope=all&limit=200');
+        if (res._authFail) return;
+        const list = Array.isArray(res.transfers) ? res.transfers : [];
+        const incoming = list.filter((t) => t.direction === 'incoming' && t.status === 'pending');
+        const history = list;
+
+        const incomingRows = incoming.map((t) => `
+          <tr data-transfer-id="${encodeURIComponent(t.requestId || '')}">
+            <td>${timeAgo(t.createdAt)}</td>
+            <td>${escapeHtml(t.routerName || t.routerId || '-')}</td>
+            <td>${escapeHtml((t.fromUser && (t.fromUser.name || t.fromUser.email)) || '-')}</td>
+            <td>${transferStatusBadge(t.status)}</td>
+            <td>
+              <button type="button" class="btn-sm primary" data-transfer-action="accept">Accept</button>
+              <button type="button" class="btn-sm danger" data-transfer-action="reject">Reject</button>
+            </td>
+          </tr>
+        `).join('');
+
+        const historyRows = history.map((t) => {
+          const other = t.direction === 'outgoing'
+            ? ((t.toUser && (t.toUser.name || t.toUser.email)) || t.targetEmail || '-')
+            : ((t.fromUser && (t.fromUser.name || t.fromUser.email)) || '-');
+          const actions = [];
+          if (t.direction === 'outgoing' && t.status === 'pending') {
+            actions.push('<button type="button" class="btn-sm" data-transfer-action="resend">Resend confirmation</button>');
+            actions.push('<button type="button" class="btn-sm danger" data-transfer-action="cancel">Cancel transfer</button>');
+          }
+          return `
+            <tr data-transfer-id="${encodeURIComponent(t.requestId || '')}">
+              <td>${fmt(t.createdAt)}</td>
+              <td>${escapeHtml(t.routerName || t.routerId || '-')}</td>
+              <td>${escapeHtml(t.direction || '-')}</td>
+              <td>${escapeHtml(other)}</td>
+              <td>${transferStatusBadge(t.status)}</td>
+              <td>${actions.join(' ') || '<span class="muted">-</span>'}</td>
+            </tr>
+          `;
+        }).join('');
+
+        document.getElementById('transferIncomingBody').innerHTML = incomingRows || '<tr><td colspan="5" class="empty">No incoming requests</td></tr>';
+        document.getElementById('transferHistoryBody').innerHTML = historyRows || '<tr><td colspan="6" class="empty">No transfer history</td></tr>';
+      } catch (x) {
+        document.getElementById('transferIncomingBody').innerHTML = '<tr><td colspan="5" class="empty">Error loading transfers</td></tr>';
+        document.getElementById('transferHistoryBody').innerHTML = '<tr><td colspan="6" class="empty">Error loading transfers</td></tr>';
+      }
+    }
+
+    async function executeTransferAction(action, requestId) {
+      if (!action || !requestId) return;
+      try {
+        if (action === 'accept') {
+          const res = await api('/api/client/transfers/accept', { method: 'POST', body: { requestId } });
+          if (res._authFail) return;
+          toast('Transfer accepted', 'success');
+        } else if (action === 'reject') {
+          const res = await api('/api/client/transfers/' + encodeURIComponent(requestId) + '/reject', { method: 'POST' });
+          if (res._authFail) return;
+          toast(res.message || 'Transfer rejected', 'success');
+        } else if (action === 'cancel') {
+          const res = await api('/api/client/transfers/' + encodeURIComponent(requestId) + '/cancel', { method: 'POST' });
+          if (res._authFail) return;
+          toast(res.message || 'Transfer cancelled', 'success');
+        } else if (action === 'resend') {
+          const res = await api('/api/client/transfers/' + encodeURIComponent(requestId) + '/resend', { method: 'POST' });
+          if (res._authFail) return;
+          toast(res.message || 'Transfer reminder resent', 'success');
+        } else {
+          return;
+        }
+        await Promise.all([loadTransferCenter(), refreshRouterViews()]);
+      } catch (x) {
+        toast(x.message || 'Transfer action failed', 'error');
+      }
+    }
+
+    async function loadLicenseTransferCenter() {
+      try {
+        const res = await api('/api/client/license-transfers?scope=all&limit=200');
+        if (res._authFail) return;
+        const list = Array.isArray(res.transfers) ? res.transfers : [];
+        const incoming = list.filter((t) => t.direction === 'incoming' && t.status === 'pending');
+        const history = list;
+        setLicenseTransferPendingBadge(incoming.length);
+
+        const incomingRows = incoming.map((t) => `
+          <tr data-license-transfer-id="${encodeURIComponent(t.requestId || '')}">
+            <td>${timeAgo(t.createdAt)}</td>
+            <td class="mono">${escapeHtml(t.licenseKey || '-')}</td>
+            <td>${escapeHtml((t.fromUser && (t.fromUser.name || t.fromUser.email)) || '-')}</td>
+            <td>${transferStatusBadge(t.status)}</td>
+            <td>
+              <button type="button" class="btn-sm primary" data-license-transfer-action="accept">Accept</button>
+              <button type="button" class="btn-sm danger" data-license-transfer-action="reject">Reject</button>
+            </td>
+          </tr>
+        `).join('');
+
+        const historyRows = history.map((t) => {
+          const other = t.direction === 'outgoing'
+            ? ((t.toUser && (t.toUser.name || t.toUser.email)) || t.targetEmail || '-')
+            : ((t.fromUser && (t.fromUser.name || t.fromUser.email)) || '-');
+          const actions = [];
+          if (t.direction === 'outgoing' && t.status === 'pending') {
+            actions.push('<button type="button" class="btn-sm" data-license-transfer-action="resend">Resend confirmation</button>');
+            actions.push('<button type="button" class="btn-sm danger" data-license-transfer-action="cancel">Cancel transfer</button>');
+          }
+          return `
+            <tr data-license-transfer-id="${encodeURIComponent(t.requestId || '')}">
+              <td>${fmt(t.createdAt)}</td>
+              <td class="mono">${escapeHtml(t.licenseKey || '-')}</td>
+              <td>${escapeHtml(t.direction || '-')}</td>
+              <td>${escapeHtml(other)}</td>
+              <td>${transferStatusBadge(t.status)}</td>
+              <td>${actions.join(' ') || '<span class="muted">-</span>'}</td>
+            </tr>
+          `;
+        }).join('');
+
+        document.getElementById('licenseTransferIncomingBody').innerHTML = incomingRows || '<tr><td colspan="5" class="empty">No incoming requests</td></tr>';
+        document.getElementById('licenseTransferHistoryBody').innerHTML = historyRows || '<tr><td colspan="6" class="empty">No transfer history</td></tr>';
+      } catch (_) {
+        document.getElementById('licenseTransferIncomingBody').innerHTML = '<tr><td colspan="5" class="empty">Error loading transfers</td></tr>';
+        document.getElementById('licenseTransferHistoryBody').innerHTML = '<tr><td colspan="6" class="empty">Error loading transfers</td></tr>';
+      }
+    }
+
+    async function executeLicenseTransferAction(action, requestId) {
+      if (!action || !requestId) return;
+      try {
+        if (action === 'accept') {
+          const res = await api('/api/client/license-transfers/accept', { method: 'POST', body: { requestId } });
+          if (res._authFail) return;
+          toast('License transfer accepted', 'success');
+        } else if (action === 'reject') {
+          const res = await api('/api/client/license-transfers/' + encodeURIComponent(requestId) + '/reject', { method: 'POST' });
+          if (res._authFail) return;
+          toast(res.message || 'License transfer rejected', 'success');
+        } else if (action === 'cancel') {
+          const res = await api('/api/client/license-transfers/' + encodeURIComponent(requestId) + '/cancel', { method: 'POST' });
+          if (res._authFail) return;
+          toast(res.message || 'License transfer cancelled', 'success');
+        } else if (action === 'resend') {
+          const res = await api('/api/client/license-transfers/' + encodeURIComponent(requestId) + '/resend', { method: 'POST' });
+          if (res._authFail) return;
+          toast(res.message || 'License transfer reminder resent', 'success');
+        } else {
+          return;
+        }
+        await Promise.all([loadLicenseTransferCenter(), loadLicense({ force: true })]);
+      } catch (x) {
+        toast(x.message || 'Transfer action failed', 'error');
+      }
+    }
+
+    async function runRouterAction(action, routerId) {
+      const router = _routersById[routerId];
+      if (!router) {
+        toast('Router not found', 'error');
+        return;
+      }
+
+      try {
+        if (action === 'edit') {
+          openRouterEditModal(routerId);
+          return;
+        }
+
+        if (action === 'details') {
+          showRouterDetails(routerId);
+          return;
+        }
+
+        if (action === 'toggle-status') {
+          const nextStatus = router.status === 'active' ? 'disabled' : 'active';
+          const ok = confirm(
+            nextStatus === 'disabled'
+              ? 'Make this router inactive?'
+              : 'Make this router active?'
+          );
+          if (!ok) return;
+          const res = await api('/api/client/routers/' + encodeURIComponent(routerId), {
+            method: 'PATCH',
+            body: { status: nextStatus }
+          });
+          if (res._authFail) return;
+          toast(nextStatus === 'disabled' ? 'Router set to inactive' : 'Router activated', 'success');
+          await refreshRouterViews();
+          return;
+        }
+
+        if (action === 'remove-license') {
+          if (!router.licenseKey) {
+            toast('No license attached to this router', 'error');
+            return;
+          }
+          if (!confirm('Remove license from this router?')) return;
+          const res = await api('/api/client/routers/' + encodeURIComponent(routerId), {
+            method: 'PATCH',
+            body: { licenseKey: null }
+          });
+          if (res._authFail) return;
+          toast('License removed. Router is now disabled and will return to registration flow.', 'success');
+          await refreshRouterViews();
+          return;
+        }
+
+        if (action === 'clear-sales') {
+          const ok = confirm('Clear all sales records for this router? This cannot be undone.');
+          if (!ok) return;
+          const res = await api('/api/client/routers/' + encodeURIComponent(routerId) + '/sales/clear', {
+            method: 'POST'
+          });
+          if (res._authFail) return;
+          toast(
+            `Cleared ${fmtPeso(res.clearedAmount || 0)} (${Number(res.clearedSales || 0)} sales)`,
+            'success'
+          );
+          await Promise.all([
+            refreshRouterViews(),
+            loadDashboard({ force: true }),
+            loadSales({ force: true })
+          ]);
+          return;
+        }
+
+        if (action === 'transfer') {
+          openTransferRequestModal(routerId);
+          return;
+        }
+
+        if (action === 'unbind-router') {
+          if ((router.licenseKey || '').trim()) {
+            toast('Remove license first before unbinding router', 'error');
+            return;
+          }
+          if (!confirm('Unbind this router record? This allows another owner to bind it fresh.')) return;
+          const res = await api('/api/client/routers/' + encodeURIComponent(routerId), {
+            method: 'DELETE'
+          });
+          if (res._authFail) return;
+          toast(res.message || 'Router unbound', 'success');
+          await Promise.all([
+            refreshRouterViews(),
+            loadDashboard({ force: true }),
+            loadLicense({ force: true })
+          ]);
+          return;
+        }
+
+        if (action === 'add-license') {
+          if (!_me || !_me.license) {
+            const meRes = await getMe({ force: true });
+            if (meRes._authFail) return;
+          }
+          openLicensePickerModal({ action, routerId });
+          return;
+        }
+      } catch (x) {
+        toast(x.message || 'Action failed', 'error');
+      }
+    }
+
+    async function loadRouters({ force = false } = {}) {
+      try {
+        const [res, meRes, salesRes] = await Promise.all([
+          getRouters({ force }),
+          getMe({ force }),
+          api('/api/client/reports/router-sales?range=today').catch(() => ({ ok: false, rows: [] }))
+        ]);
+        if (res._authFail) return;
+        const routers = res.routers || [];
+        const salesRows = Array.isArray(salesRes?.rows) ? salesRes.rows : [];
+        const salesByRouter = Object.create(null);
+        salesRows.forEach((row) => {
+          if (!row || !row.routerId) return;
+          salesByRouter[row.routerId] = {
+            todayAmount: Number((row.periodAmount ?? row.totalAmount) || 0),
+            totalAmount: Number((row.totalAmount ?? row.periodAmount) || 0),
+            todaySales: Number((row.periodSales ?? row.totalSales) || 0),
+            totalSales: Number((row.totalSales ?? row.periodSales) || 0)
+          };
+        });
+        _routersById = Object.create(null);
+        const ONLINE_MS = 2 * 60 * 1000;
+        const isOnline = (r) => r.lastSeenAt && (Date.now() - new Date(r.lastSeenAt).getTime()) < ONLINE_MS;
+        const rows = routers.map(r => `
+          <tr>
+            <td class="mono">${escapeHtml(r.routerId || '-')}</td>
+            <td>${escapeHtml(r.name || '-')}</td>
+            <td class="mono">${escapeHtml(r.licenseKey || '-')}</td>
+            <td><span class="badge ${r.status === 'active' ? 'active' : (r.status === 'disabled' ? 'disabled' : '')}">${escapeHtml(r.status || '-')}</span></td>
+            <td><span class="badge ${isOnline(r) ? 'online' : 'offline'}">${isOnline(r) ? 'Online' : 'Offline'}</span></td>
+            <td>${fmtPeso(salesByRouter[r.routerId]?.todayAmount || 0)}</td>
+            <td>${fmtPeso(salesByRouter[r.routerId]?.totalAmount || 0)}</td>
+            <td>${timeAgo(r.lastSeenAt)}</td>
+            <td>${escapeHtml(r.description || '-')}</td>
+            <td class="router-actions">
+              <button type="button" class="icon-action-btn" data-router-action="edit" data-router-id="${encodeURIComponent(r.routerId || '')}" title="Edit">&#9998;</button>
+              <button type="button" class="icon-action-btn" data-router-more="${encodeURIComponent(r.routerId || '')}" title="More">&#8942;</button>
+            </td>
+          </tr>
+        `).join('');
+        routers.forEach((router) => {
+          if (router && router.routerId) _routersById[router.routerId] = router;
+        });
+        document.getElementById('routersBody').innerHTML = rows || '<tr><td colspan="10" class="empty">No routers. Add one using the form above.</td></tr>';
+
+        const sel = document.getElementById('regLicenseKey');
+        const availableLicenseKeys = getActivationAvailableLicenseKeys(routers, meRes);
+        sel.innerHTML = availableLicenseKeys.length
+          ? availableLicenseKeys.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('')
+          : '<option value="">No available license</option>';
+        applyRouterFlowHint();
+      } catch (_) {
+        _routersById = Object.create(null);
+        document.getElementById('routersBody').innerHTML = '<tr><td colspan="10" class="empty">Error loading</td></tr>';
+      }
+    }
+
+    async function loadRoutersForVouchers({ force = false } = {}) {
+      try {
+        const res = await getRouters({ force });
+        if (res._authFail) return;
+        const routers = res.routers || [];
+        const opts = '<option value="">All</option>' + routers.map(r => `<option value="${(r.routerId || '').replace(/"/g, '&quot;')}">${(r.name || r.routerId || '-').replace(/</g, '&lt;')}</option>`).join('');
+        document.getElementById('bulkRouter').innerHTML = opts;
+        document.getElementById('filterVoucherRouter').innerHTML = opts;
+      } catch (_) {}
+    }
+
+    async function loadVouchers() {
+      try {
+        const routerId = document.getElementById('filterVoucherRouter')?.value || '';
+        const status = document.getElementById('filterVoucherStatus')?.value || '';
+        let path = '/api/client/vouchers?limit=200';
+        if (routerId) path += '&routerId=' + encodeURIComponent(routerId);
+        if (status) path += '&status=' + encodeURIComponent(status);
+        const res = await api(path);
+        if (res._authFail) return;
+        const vouchers = res.vouchers || [];
+        const rows = vouchers.map(v => `
+          <tr>
+            <td class="mono">${(v.code || '-').replace(/</g, '&lt;')}</td>
+            <td class="mono">${(v.routerId || '-').slice(0,14).replace(/</g, '&lt;')}</td>
+            <td>${v.amount ?? '-'}</td>
+            <td>${v.minutes ?? '-'}</td>
+            <td><span class="badge ${v.status || 'unused'}">${v.status || '-'}</span></td>
+            <td>${fmt(v.createdAt)}</td>
+          </tr>
+        `).join('');
+        document.getElementById('vouchersBody').innerHTML = rows || '<tr><td colspan="6" class="empty">No vouchers</td></tr>';
+      } catch (_) {}
+    }
+
+    document.getElementById('copyBindCode').onclick = () => {
+      const code = document.getElementById('bindCodeDisplay').textContent;
+      navigator.clipboard?.writeText(code).then(() => toast('Copied')).catch(() => toast('Copy failed', 'error'));
+    };
+    document.getElementById('activateRouterHere').onclick = () => {
+      triggerRouterActivationFromDashboard();
+    };
+    document.getElementById('openRouterActivate').onclick = () => {
+      const target = document.getElementById('openRouterActivate').dataset.target || getRouterActivationUrl();
+      if (!target) {
+        toast('Open router page manually: http://10.0.0.1:2080/register.html', 'error');
+        return;
+      }
+      window.location.href = target;
+    };
+
+    document.getElementById('routersBody').onclick = (e) => {
+      const menuBtn = e.target.closest('[data-router-more]');
+      if (menuBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const routerId = decodeURIComponent(menuBtn.dataset.routerMore || '');
+        if (!routerId) {
+          toast('Invalid router ID', 'error');
+          return;
+        }
+        openRouterMenuModal(routerId);
+        return;
+      }
+
+      const actionBtn = e.target.closest('[data-router-action]');
+      if (actionBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const action = actionBtn.dataset.routerAction || '';
+        const routerId = decodeURIComponent(actionBtn.dataset.routerId || '');
+        if (!routerId) {
+          toast('Invalid router ID', 'error');
+          return;
+        }
+        void runRouterAction(action, routerId);
+      }
+    };
+
+    document.getElementById('routerEditForm').onsubmit = saveRouterEdit;
+    document.getElementById('routerEditSeparateBands').onchange = (e) => {
+      setSeparateBandsUi(Boolean(e && e.target && e.target.checked));
+    };
+    document.getElementById('routerRateAddBtn').onclick = () => {
+      document.getElementById('routerEditRatesBody')?.appendChild(buildRouterRateRow(ROUTER_RATE_DEFAULTS[0]));
+    };
+    document.getElementById('routerEditClose').onclick = closeRouterEditModal;
+    document.getElementById('routerEditCancel').onclick = closeRouterEditModal;
+    document.getElementById('routerEditModal').onclick = (e) => {
+      if (e.target && e.target.id === 'routerEditModal') closeRouterEditModal();
+    };
+    document.getElementById('routerMenuClose').onclick = closeRouterMenuModal;
+    document.getElementById('routerMenuModal').onclick = (e) => {
+      if (e.target && e.target.id === 'routerMenuModal') closeRouterMenuModal();
+    };
+    document.querySelectorAll('#routerMenuModal [data-menu-action]').forEach((btn) => {
+      btn.onclick = () => {
+        const routerId = _routerMenuRouterId;
+        if (!routerId) {
+          toast('Router not selected', 'error');
+          return;
+        }
+        const action = btn.dataset.menuAction || '';
+        closeRouterMenuModal();
+        void runRouterAction(action, routerId);
+      };
+    });
+    document.getElementById('licensePickerForm').onsubmit = submitLicensePicker;
+    document.getElementById('licensePickerClose').onclick = closeLicensePickerModal;
+    document.getElementById('licensePickerCancel').onclick = closeLicensePickerModal;
+    document.getElementById('licensePickerModal').onclick = (e) => {
+      if (e.target && e.target.id === 'licensePickerModal') closeLicensePickerModal();
+    };
+    document.getElementById('transferRequestForm').onsubmit = submitTransferRequest;
+    document.getElementById('transferRequestClose').onclick = closeTransferRequestModal;
+    document.getElementById('transferRequestCancel').onclick = closeTransferRequestModal;
+    document.getElementById('transferRequestModal').onclick = (e) => {
+      if (e.target && e.target.id === 'transferRequestModal') closeTransferRequestModal();
+    };
+    document.getElementById('transferCenterOpen').onclick = () => { void openTransferCenterModal(); };
+    document.getElementById('transferCenterClose').onclick = closeTransferCenterModal;
+    document.getElementById('transferCenterModal').onclick = (e) => {
+      if (e.target && e.target.id === 'transferCenterModal') closeTransferCenterModal();
+    };
+    const transferActionHandler = (e) => {
+      const btn = e.target.closest('[data-transfer-action]');
+      if (!btn) return;
+      const row = btn.closest('tr[data-transfer-id]');
+      const requestId = row ? decodeURIComponent(row.dataset.transferId || '') : '';
+      const action = btn.dataset.transferAction || '';
+      if (!requestId || !action) return;
+      void executeTransferAction(action, requestId);
+    };
+    document.getElementById('transferIncomingBody').onclick = transferActionHandler;
+    document.getElementById('transferHistoryBody').onclick = transferActionHandler;
+
+    document.getElementById('licenseRows').onclick = (e) => {
+      const btn = e.target.closest('[data-license-action="transfer"]');
+      if (!btn) return;
+      const key = decodeURIComponent(btn.dataset.licenseKey || '');
+      if (!key) return;
+      openLicenseTransferRequestModal(key);
+    };
+    document.getElementById('licenseTransferCenterOpen').onclick = () => { void openLicenseTransferCenterModal(); };
+    document.getElementById('licenseTransferRequestForm').onsubmit = submitLicenseTransferRequest;
+    document.getElementById('licenseTransferRequestClose').onclick = closeLicenseTransferRequestModal;
+    document.getElementById('licenseTransferRequestCancel').onclick = closeLicenseTransferRequestModal;
+    document.getElementById('licenseTransferRequestModal').onclick = (e) => {
+      if (e.target && e.target.id === 'licenseTransferRequestModal') closeLicenseTransferRequestModal();
+    };
+    document.getElementById('licenseTransferCenterClose').onclick = closeLicenseTransferCenterModal;
+    document.getElementById('licenseTransferCenterModal').onclick = (e) => {
+      if (e.target && e.target.id === 'licenseTransferCenterModal') closeLicenseTransferCenterModal();
+    };
+    const licenseTransferActionHandler = (e) => {
+      const btn = e.target.closest('[data-license-transfer-action]');
+      if (!btn) return;
+      const row = btn.closest('tr[data-license-transfer-id]');
+      const requestId = row ? decodeURIComponent(row.dataset.licenseTransferId || '') : '';
+      const action = btn.dataset.licenseTransferAction || '';
+      if (!requestId || !action) return;
+      void executeLicenseTransferAction(action, requestId);
+    };
+    document.getElementById('licenseTransferIncomingBody').onclick = licenseTransferActionHandler;
+    document.getElementById('licenseTransferHistoryBody').onclick = licenseTransferActionHandler;
+
+    let _lastBulkVouchers = [];
+    document.getElementById('bulkGenerate').onclick = async () => {
+      const routerId = document.getElementById('bulkRouter').value;
+      const count = document.getElementById('bulkCount').value || 10;
+      const amount = document.getElementById('bulkAmount').value;
+      const minutes = document.getElementById('bulkMinutes').value;
+      const expiryHours = document.getElementById('bulkExpiry').value || 24;
+      if (!routerId) { toast('Select a router', 'error'); return; }
+      try {
+        const res = await api('/api/client/vouchers/bulk', {
+          method: 'POST',
+          body: { routerId, count, amount: amount || undefined, minutes: minutes || undefined, expiryHours }
+        });
+        if (res._authFail) return;
+        if (!res.ok) throw new Error(res.error || 'Failed');
+        _lastBulkVouchers = res.vouchers || [];
+        document.getElementById('bulkCreated').textContent = _lastBulkVouchers.length;
+        document.getElementById('bulkCodes').textContent = _lastBulkVouchers.map(v => v.code).join('\n');
+        document.getElementById('bulkResult').style.display = 'block';
+        toast('Generated ' + _lastBulkVouchers.length + ' vouchers');
+        loadVouchers();
+      } catch (x) { toast(x.message || 'Failed', 'error'); }
+    };
+    document.getElementById('bulkCopy').onclick = () => {
+      const codes = _lastBulkVouchers.map(v => v.code).join('\n');
+      navigator.clipboard?.writeText(codes).then(() => toast('Copied to clipboard')).catch(() => toast('Copy failed', 'error'));
+    };
+    document.getElementById('bulkDownload').onclick = () => {
+      const codes = _lastBulkVouchers.map(v => v.code).join('\n');
+      const blob = new Blob(['Code,Minutes,Amount,ExpiresAt\n' + _lastBulkVouchers.map(v => `${v.code},${v.minutes},${v.amount},${v.expiresAt || ''}`).join('\n')], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'vouchers-' + new Date().toISOString().slice(0,10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('CSV downloaded');
+    };
+
+    document.getElementById('filterVoucherRouter').onchange = loadVouchers;
+    document.getElementById('filterVoucherStatus').onchange = loadVouchers;
+
+    document.getElementById('routerRefresh').onclick = () => { loadDashboard({ force: true }); loadRouters({ force: true }); };
+    document.getElementById('voucherRefresh').onclick = () => { loadRoutersForVouchers({ force: true }); loadVouchers(); };
+    document.getElementById('licenseRefresh').onclick = () => loadLicense({ force: true });
+    document.getElementById('salesRefresh').onclick = () => loadSales({ force: true });
+    document.getElementById('salesClearBtn').onclick = clearSalesHistory;
+
+    function load() {
+      loadDashboard({ force: true });
+    }
+    document.getElementById('dashRefresh').onclick = () => loadDashboard({ force: true });
+
+    if (resetToken) {
+      clearToken();
+      setAuthView('reset');
+    } else if (hasTransferAcceptPending() || hasLicenseTransferAcceptPending()) {
+      setAuthView('login');
+      showLoginHintForTransfer();
+    } else {
+      setAuthView(authHint === 'register' ? 'register' : 'login');
+    }
+
+    if (token() && !resetToken) {
+      api('/api/client/me').then(res => {
+        if (res._authFail) return;
+        if (res.ok && res.user) {
+          _me = res;
+          _meLoadedAt = Date.now();
+          showAppShell();
+        } else {
+          clearToken();
+        }
+      }).catch(() => clearToken());
+    }
+  </script>
+</body>
+</html>
+
+
+

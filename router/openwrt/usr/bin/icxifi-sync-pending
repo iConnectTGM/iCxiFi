@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# Phase 5: Sync pending offline sales to cloud.
+# Reads /etc/icxifi/pending_sales.txt, POSTs to /api/router/sales/sync
+#
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+PENDING_FILE="/etc/icxifi/pending_sales.txt"
+
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
+
+[ -z "$BASE" ] || [ -z "$RID" ] || [ -z "$APIKEY" ] && exit 1
+[ ! -s "$PENDING_FILE" ] && exit 0
+
+# Format: deviceId|amount|voucherCode|ts (ISO)
+tmp_json="/tmp/icxifi_sync_payload.$$"
+printf '{"items":[' > "$tmp_json"
+first=1
+while IFS='|' read -r dev amt code ts; do
+  [ -z "$code" ] && continue
+  ts="${ts:-$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')}"
+  dev="$(printf '%s' "$dev" | tr -d '"\\')"
+  code="$(printf '%s' "$code" | tr -d '"\\')"
+  ts="$(printf '%s' "$ts" | tr -d '"\\')"
+  [ "$first" = 1 ] && first=0 || printf ',' >> "$tmp_json"
+  printf '{"deviceId":"%s","amount":%s,"voucherCode":"%s","ts":"%s"}' \
+    "$dev" "${amt:-0}" "$code" "$ts" >> "$tmp_json"
+done < "$PENDING_FILE"
+printf ']}' >> "$tmp_json"
+
+# No items to sync
+[ "$first" = 1 ] && rm -f "$tmp_json" && exit 0
+
+resp="$(curl -sS -m 30 -X POST "$BASE/api/router/sales/sync" \
+  -H "ngrok-skip-browser-warning: true" \
+  -H "Authorization: Bearer $APIKEY" \
+  -H "X-Router-ID: $RID" \
+  -H "Content-Type: application/json" \
+  -d "@$tmp_json" 2>/dev/null)" || exit 1
+
+printf '%s' "$resp" | grep -q '"ok"[[:space:]]*:[[:space:]]*true' || { rm -f "$tmp_json"; exit 1; }
+
+# Clear pending on success
+: > "$PENDING_FILE"
+rm -f "$tmp_json"
+exit 0

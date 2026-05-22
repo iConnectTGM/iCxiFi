@@ -1,0 +1,45 @@
+#!/bin/sh
+# Fetch bind code from cloud for LOGO registration/activation UI.
+# GET /api/router/bindcode?routerId=xx (public, no auth)
+
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+printf 'Content-Type: application/json\r\n'
+printf 'Cache-Control: no-store\r\n\r\n'
+
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+
+if [ -z "$RID" ]; then
+  RID="$(ip -o link show br-lan 2>/dev/null | awk '/link\/ether/ {print tolower($17); exit}')"
+fi
+if [ -z "$RID" ]; then
+  RID="$(ip -o link show eth0 2>/dev/null | awk '/link\/ether/ {print tolower($17); exit}')"
+fi
+
+if [ -z "$BASE" ] || [ -z "$RID" ]; then
+  printf '{"ok":false,"routerId":"%s","bindCode":"NONE","displayCode":"NONE","error":"Missing cloud_base_url or router_id"}\n' "$RID"
+  exit 0
+fi
+
+BASE="${BASE%/}"
+DASH_BASE="$BASE"
+case "$DASH_BASE" in
+  */api) DASH_BASE="${DASH_BASE%/api}" ;;
+esac
+RESP="$(curl -sS -m 10 -X GET "${BASE}/api/router/bindcode?routerId=$(printf '%s' "$RID" | sed 's/:/%3A/g')" \
+  -H "ngrok-skip-browser-warning: true" 2>/dev/null)" || true
+
+if [ -n "$RESP" ] && printf '%s' "$RESP" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+  BIND="$(printf '%s' "$RESP" | sed -n 's/.*"bindCode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  DISP="$(printf '%s' "$RESP" | sed -n 's/.*"displayCode"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  EXP="$(printf '%s' "$RESP" | sed -n 's/.*"expiresInSeconds"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)"
+  [ -z "$BIND" ] && BIND="NONE"
+  [ -z "$DISP" ] && DISP="$BIND"
+  [ -z "$EXP" ] && EXP="60"
+  printf '{"ok":true,"routerId":"%s","bindCode":"%s","displayCode":"%s","expiresInSeconds":%s,"cloudBase":"%s","dashboardUrl":"%s/dashboard"}\n' \
+    "$RID" "$BIND" "$DISP" "$EXP" "$BASE" "$DASH_BASE"
+else
+  printf '{"ok":false,"routerId":"%s","bindCode":"NONE","displayCode":"NONE","error":"Cloud unreachable"}\n' "$RID"
+fi

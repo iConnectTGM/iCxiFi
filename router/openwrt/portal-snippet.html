@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>iCxiFi Portal</title>
+</head>
+<body>
+  <button id="coinBtn">Insert Coin</button>
+  <form id="voucherForm">
+    <input id="voucherCode" placeholder="Enter voucher code">
+    <button type="submit">Redeem</button>
+  </form>
+  <pre id="result"></pre>
+
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const clientIp = qs.get('clientip') || qs.get('ip') || '';
+    const clientMac = qs.get('clientmac') || qs.get('mac') || '';
+    const coinBtn = document.getElementById('coinBtn');
+    const voucherForm = document.getElementById('voucherForm');
+    const result = document.getElementById('result');
+
+    function showResult(data) {
+      result.textContent = JSON.stringify(data, null, 2);
+    }
+
+    async function loadMode() {
+      const conf = await fetch('/cgi-bin/icxifi/profile').then((r) => r.json());
+      const mode = (conf.profile && conf.profile.mode) || 'hybrid';
+      coinBtn.style.display = mode === 'voucher' ? 'none' : 'inline-block';
+      voucherForm.style.display = mode === 'vendo' ? 'none' : 'block';
+    }
+
+    coinBtn.addEventListener('click', async () => {
+      const resp = await fetch(`/cgi-bin/icxifi/vend?amount=10&deviceId=vendo-1&clientIp=${encodeURIComponent(clientIp)}&clientMac=${encodeURIComponent(clientMac)}`);
+      showResult(await resp.json());
+      // If integrated with openNDS FAS/BinAuth, trigger your existing auth callback here on success.
+    });
+
+    voucherForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = document.getElementById('voucherCode').value.trim();
+      const resp = await fetch(`/cgi-bin/icxifi/redeem?code=${encodeURIComponent(code)}&clientIp=${encodeURIComponent(clientIp)}&clientMac=${encodeURIComponent(clientMac)}`);
+      showResult(await resp.json());
+      // If integrated with openNDS FAS/BinAuth, trigger your existing auth callback here on success.
+    });
+
+    loadMode().catch((err) => showResult({ ok: false, error: String(err) }));
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>iCxiFi | Router Activation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Rajdhani:wght@500;600;700&display=swap" media="print" onload="this.media='all'" />
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Rajdhani:wght@500;600;700&display=swap" /></noscript>
+<style>
+
+:root {
+  --bg: #081121;
+  --bg2: #0b1b32;
+  --panel: #17263a;
+  --panel2: #131f31;
+  --line: rgba(130, 165, 210, 0.22);
+  --line-strong: rgba(130, 165, 210, 0.34);
+  --text: #dbe8f7;
+  --muted: #97abc4;
+  --title: #ffb117;
+  --blue: #17a9ff;
+  --green: #13d196;
+  --danger: #ff7272;
+  --ok: #6bffbe;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "Rajdhani", "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 700px at 85% 0%, rgba(23, 169, 255, 0.12), rgba(0, 0, 0, 0) 55%),
+    radial-gradient(900px 600px at 10% 100%, rgba(19, 209, 150, 0.08), rgba(0, 0, 0, 0) 60%),
+    linear-gradient(165deg, #091628 0%, #07111f 55%, #060d19 100%);
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 2vw, 24px);
+}
+
+.page {
+  width: clamp(320px, 92vw, 560px);
+  margin: 0 auto;
+}
+
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.16)),
+    linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  padding: clamp(14px, 2.6vw, 22px);
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, rgba(255, 177, 23, 0.07), rgba(23, 169, 255, 0.07) 52%, rgba(19, 209, 150, 0.05));
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.brand {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  position: relative;
+}
+
+.brand-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand img {
+  width: min(260px, 78vw);
+  max-width: 100%;
+  height: auto;
+  opacity: 0.96;
+  border-radius: 14px;
+}
+
+.node-pill {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 177, 23, 0.35);
+  background: rgba(255, 177, 23, 0.12);
+  color: #ffc24e;
+  padding: 6px 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+h1 {
+  margin: 0;
+  font-family: "Orbitron", "Rajdhani", sans-serif;
+  color: var(--title);
+  font-size: clamp(24px, 4vw, 30px);
+  letter-spacing: 0.5px;
+}
+
+.subtitle {
+  margin: 6px 0 16px;
+  color: var(--muted);
+  font-size: 19px;
+}
+
+.code-box {
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(0, 0, 0, 0.28)),
+    rgba(10, 18, 31, 0.8);
+  padding: 14px;
+}
+
+.label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.code {
+  font-family: "Orbitron", "Rajdhani", sans-serif;
+  font-size: clamp(24px, 5.2vw, 32px);
+  color: #dff1ff;
+  text-shadow: 0 0 14px rgba(23, 169, 255, 0.28);
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+}
+
+.code.loading {
+  opacity: 0.7;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% { opacity: 0.4; }
+}
+
+.meta {
+  color: var(--muted);
+  margin: 0;
+  font-size: 17px;
+}
+
+.form-grid {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.field {
+  color: #c0d4ed;
+  font-size: 18px;
+  font-weight: 600;
+  width: 100%;
+  text-align: center;
+}
+
+.inp {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(7, 14, 25, 0.75);
+  color: var(--text);
+  outline: none;
+  font: inherit;
+  font-size: 19px;
+}
+
+.inp:focus {
+  border-color: rgba(23, 169, 255, 0.62);
+  box-shadow: 0 0 0 3px rgba(23, 169, 255, 0.16);
+}
+
+.actions {
+  margin-top: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.cloud-flow {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(11, 20, 34, 0.55);
+}
+
+.cloud-flow .meta {
+  margin: 0;
+}
+
+.cloud-actions {
+  margin-top: 10px;
+}
+
+.btn {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 19px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover {
+  filter: brightness(1.04);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn.primary {
+  color: #1b1404;
+  background: linear-gradient(180deg, #ffc249 0%, #f0a000 100%);
+  box-shadow: 0 12px 24px rgba(240, 160, 0, 0.2);
+}
+
+.btn.secondary {
+  color: #d7e4f4;
+  border-color: rgba(23, 169, 255, 0.35);
+  background: linear-gradient(180deg, rgba(23, 169, 255, 0.22), rgba(11, 38, 66, 0.35));
+}
+
+.btn.ghost {
+  color: #d7e4f4;
+  border-color: var(--line);
+  background: rgba(15, 29, 48, 0.65);
+}
+
+.status {
+  margin: 14px 0 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(11, 20, 34, 0.75);
+  padding: 10px 12px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.status-muted {
+  color: var(--muted);
+}
+
+.status-ok {
+  color: var(--ok);
+  border-color: rgba(107, 255, 190, 0.4);
+}
+
+.status-bad {
+  color: var(--danger);
+  border-color: rgba(255, 114, 114, 0.4);
+}
+
+@media (max-width: 480px) {
+  .brand {
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .node-pill {
+    position: static;
+    transform: none;
+  }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <section class="panel">
+    <header class="brand">
+      <div class="brand-main">
+        <img src="/logo.svg" alt="iCxiFi" width="200" />
+      </div>
+      <div class="node-pill">Router Link</div>
+    </header>
+
+    <h1>Router Activation</h1>
+    <p class="subtitle">Bind this router in your iCxiFi Cloud.</p>
+
+    <section class="code-box" aria-label="Bind details">
+      <p class="label">Bind Code</p>
+      <div class="code loading" id="code">Loading…</div>
+      <p class="meta" id="meta">Router ID: …</p>
+    </section>
+
+    <div class="form-grid">
+      <label class="field" for="licenseKey">License Key</label>
+      <input class="inp" id="licenseKey" placeholder="e.g. LIC-STARTER-0001" autocomplete="off" />
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="activate" type="button">Activate Router</button>
+      <button class="btn secondary" id="gen" type="button">Generate Bind Code</button>
+    </div>
+
+    <section class="cloud-flow" aria-label="Cloud account flow">
+      <p class="label">Client Account Flow</p>
+      <p class="meta">Need account setup? Open iCxiFi Cloud and continue router registration there.</p>
+      <div class="actions cloud-actions">
+        <button class="btn secondary" id="openLogin" type="button" disabled>Open Client Login</button>
+        <button class="btn ghost" id="openRegister" type="button" disabled>Create Client Account</button>
+      </div>
+    </section>
+
+    <p class="status status-muted" id="status" aria-live="polite">Loading…</p>
+  </section>
+</main>
+
+<script>
+const codeEl = document.getElementById("code");
+const metaEl = document.getElementById("meta");
+const statusEl = document.getElementById("status");
+const licenseKeyEl = document.getElementById("licenseKey");
+const openLoginBtn = document.getElementById("openLogin");
+const openRegisterBtn = document.getElementById("openRegister");
+
+const endpoints = {
+  bindCode: "/cgi-bin/icxifi/bindcode",
+  activation: "/cgi-bin/icxifi/activation",
+  activate: "/cgi-bin/icxifi/activate"
+};
+let cloudDashboardUrl = "";
+let routerId = "";
+
+function getDefaultRouterName() {
+  const clean = String(routerId || "").toUpperCase().replace(/[^A-F0-9]/g, "");
+  const suffix = clean.length >= 4 ? clean.slice(-4) : "0000";
+  return "My Router-" + suffix;
+}
+
+function setStatus(kind, message) {
+  statusEl.className = "status status-" + kind;
+  statusEl.textContent = message;
+}
+
+function setCloudActionsEnabled(enabled) {
+  openLoginBtn.disabled = !enabled;
+  openRegisterBtn.disabled = !enabled;
+}
+
+function buildDashboardUrl(mode) {
+  if (!cloudDashboardUrl) return "";
+  const parts = [];
+  parts.push("auth=" + encodeURIComponent(mode));
+  const gatewayIp = (window.location && window.location.hostname) ? window.location.hostname : "";
+  if (gatewayIp) {
+    parts.push("gatewayIp=" + encodeURIComponent(gatewayIp));
+  }
+  if (window.location && window.location.origin) {
+    parts.push("routerRegisterUrl=" + encodeURIComponent(window.location.origin + "/register.html"));
+  }
+  if (routerId) {
+    parts.push("routerId=" + encodeURIComponent(routerId));
+    parts.push("routerName=" + encodeURIComponent(getDefaultRouterName()));
+  }
+
+  const bindCode = (codeEl && codeEl.textContent) ? codeEl.textContent.trim() : "";
+  if (bindCode && bindCode !== "NONE" && bindCode !== "Loading...") {
+    parts.push("bindCode=" + encodeURIComponent(bindCode));
+  }
+
+  const licenseKey = licenseKeyEl.value.trim();
+  if (licenseKey) {
+    parts.push("licenseKey=" + encodeURIComponent(licenseKey));
+  }
+
+  return cloudDashboardUrl + (cloudDashboardUrl.indexOf("?") >= 0 ? "&" : "?") + parts.join("&");
+}
+
+async function resolveCloudDashboardUrl() {
+  if (cloudDashboardUrl) return cloudDashboardUrl;
+  try {
+    const debug = await getJson("/cgi-bin/icxifi/registration_debug");
+    if (debug && debug.cloudBase) {
+      cloudDashboardUrl = String(debug.cloudBase).replace(/\/+$/, "").replace(/\/api$/, "") + "/dashboard";
+    }
+  } catch (_) {}
+  return cloudDashboardUrl;
+}
+
+async function openCloudAuth(mode) {
+  await resolveCloudDashboardUrl();
+  const target = buildDashboardUrl(mode);
+  if (!target) {
+    setStatus("bad", "Cloud dashboard URL not available. Check /etc/icxifi/cloud_base_url.");
+    return;
+  }
+
+  // Route via local CGI so router can auto-whitelist Client UI host in openNDS before redirect.
+  const qIndex = target.indexOf("?");
+  const query = qIndex >= 0 ? target.slice(qIndex + 1) : "";
+  const bypassUrl = "/cgi-bin/icxifi/open_client_ui" + (query ? ("?" + query) : "");
+  window.location.href = bypassUrl;
+}
+
+async function getJson(url, options = {}) {
+  const response = await fetch(url, { cache: "no-store", ...options });
+  const raw = await response.text();
+  let data = {};
+
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      throw new Error("Invalid API response.");
+    }
+  }
+
+  if (!response.ok) {
+    const apiError = typeof data.error === "string" ? data.error : "HTTP " + response.status;
+    throw new Error(apiError);
+  }
+
+  return data;
+}
+
+async function getBindCode() {
+  codeEl.classList.add("loading");
+  try {
+    const data = await getJson(endpoints.bindCode);
+    codeEl.textContent = data.displayCode || data.bindCode || "NONE";
+    routerId = data.routerId || "unknown";
+    metaEl.textContent = "Router ID: " + routerId;
+    cloudDashboardUrl = (data.dashboardUrl || "").trim();
+    if (!cloudDashboardUrl && data.cloudBase) {
+      cloudDashboardUrl = String(data.cloudBase).replace(/\/+$/, "").replace(/\/api$/, "") + "/dashboard";
+    }
+    setCloudActionsEnabled(true);
+  } finally {
+    codeEl.classList.remove("loading");
+  }
+}
+
+async function checkActivation({ silent = false } = {}) {
+  const data = await getJson(endpoints.activation);
+  if (data.activated) {
+    location.href = "/activated.html";
+    return true;
+  }
+
+  if (!silent) {
+    setStatus("bad", "Not activated. Enter license key then activate.");
+  }
+
+  return false;
+}
+
+async function activate() {
+  const routerName = getDefaultRouterName();
+  const licenseKey = licenseKeyEl.value.trim();
+  const bindCode = (codeEl && codeEl.textContent) ? codeEl.textContent.trim() : "";
+
+  if (!licenseKey) {
+    setStatus("bad", "License Key required.");
+    return;
+  }
+
+  if (!bindCode || bindCode === "NONE" || bindCode.length !== 6) {
+    setStatus("bad", "Get Bind Code first (click Generate).");
+    return;
+  }
+
+  setStatus("muted", "Activating...");
+
+  const data = await getJson(endpoints.activate, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "routerName=" + encodeURIComponent(routerName) + "&licenseKey=" + encodeURIComponent(licenseKey) + "&bindCode=" + encodeURIComponent(bindCode)
+  });
+
+  if (data.ok) {
+    setStatus("ok", "Activated. Verifying state...");
+    const redirected = await checkActivation({ silent: true });
+    if (!redirected) {
+      setStatus("ok", "Activation accepted. Refresh shortly if no redirect appears.");
+    }
+    return;
+  }
+
+  if (data.error === "cooldown") {
+    const retryAfter = Number(data.retryAfterSeconds);
+    const wait = Number.isFinite(retryAfter) ? retryAfter : "?";
+    setStatus("bad", "Cooldown active. Retry after " + wait + "s.");
+    return;
+  }
+
+  setStatus("bad", typeof data.error === "string" ? data.error : "Activation failed.");
+}
+
+document.getElementById("gen").addEventListener("click", () => {
+  getBindCode()
+    .then(() => setStatus("muted", "Bind code refreshed."))
+    .catch((error) => setStatus("bad", error.message));
+});
+
+document.getElementById("activate").addEventListener("click", () => {
+  activate()
+    .catch((error) => setStatus("bad", error.message));
+});
+openLoginBtn.addEventListener("click", () => {
+  openCloudAuth("login").catch(() => setStatus("bad", "Could not open cloud login."));
+});
+openRegisterBtn.addEventListener("click", () => {
+  openCloudAuth("register").catch(() => setStatus("bad", "Could not open cloud registration."));
+});
+
+(async function init() {
+  try {
+    setCloudActionsEnabled(true);
+    // Check activation first (local, fast) – redirect immediately if already activated
+    const activated = await checkActivation({ silent: true });
+    if (activated) return;
+
+    setStatus("muted", "Fetching bind code…");
+    await getBindCode();
+    setStatus("muted", "Waiting for action.");
+  } catch (error) {
+    setStatus("bad", error.message);
+    codeEl.textContent = "Error";
+  }
+})();
+</script>
+</body>
+</html>

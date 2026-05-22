@@ -1,0 +1,86 @@
+ICXIFI - Continue Tomorrow Checklist
+Date: __________
+
+1) Open project
+- Open folder: d:\iCxiFi
+- Main files you edited:
+  - router/openwrt/www/app.js
+  - router/openwrt/www/cgi-bin/icxifi/pause
+  - router/openwrt/www/cgi-bin/icxifi/session
+  - router/openwrt/www/cgi-bin/icxifi/resume
+
+2) Deploy files to router (drag/copy)
+- Copy to /www/:
+  - app.js
+- Copy to /www/cgi-bin/icxifi/:
+  - pause
+  - session
+  - resume
+
+3) Set execute permission for CGI scripts (on router shell)
+- chmod +x /www/cgi-bin/icxifi/pause
+- chmod +x /www/cgi-bin/icxifi/session
+- chmod +x /www/cgi-bin/icxifi/resume
+
+4) Clear temporary state before retest (optional but recommended)
+- rm -f /tmp/icxifi_paused/*
+- rm -f /tmp/icxifi_sessions/*
+
+5) Restart OpenNDS service
+- /etc/init.d/opennds restart
+
+6) Browser test flow (phone)
+- Open captive portal page
+- Hard refresh / private tab
+- Redeem voucher
+- Press Pause
+- Confirm status becomes PAUSED immediately
+- Confirm timer freezes
+- Refresh page 2-3 times
+- Confirm timer stays frozen after refresh
+- Press Continue
+- Confirm session resumes and countdown runs again
+
+6.1) Admin UI quick checks
+# Terminal 1 – start the API
+cd d:\iCxiFi\api
+npm start
+
+# Terminal 2 – expose it
+ngrok http 4000
+curl -s -o /dev/null -w "%{http_code}" https://7b25-124-217-116-43.ngrok-free.app/api/health
+   echo "https://7b25-124-217-116-43.ngrok-free.app" > /etc/icxifi/cloud_base_url
+
+
+https://nondisappearing-eula-ascitical.ngrok-free.dev/admin/
+https://7b25-124-217-116-43.ngrok-free.app/admin/
+a972f28d1e6660d82d674e9c8ecd8353a7044380d493be2117e2e168a89e5c1b
+- Open Admin UI page
+- Confirm service/profile loads without errors
+- Verify rates and mode shown are correct
+- If you change config, save and verify portal reflects changes
+- Re-check pause/resume flow from portal after admin changes
+
+7) If problem appears again, collect quick evidence
+- Screenshot of status + timer before/after refresh
+- Exact toast message shown (e.g. "Disconnected")
+- Time stamp when issue happened
+
+8) Notes for tomorrow
+- Expected behavior:
+  - Pause should freeze timer instantly.
+  - Refresh should keep same frozen timer value.
+  - Continue should restore countdown.
+
+Before implementing multi‑tenant
+Run backup
+   cd D:\iCxiFi\api   npm run backup
+Back up code (optional but recommended)
+Git: git init and git add . then git commit -m "Before multi-tenant"
+Or copy the D:\iCxiFi folder to another location
+Implement – the backup stays in api/backups/ for restore if needed.
+Restore (if needed)
+cd D:\iCxiFi\apinpm run restore
+To restore a specific backup:
+node scripts/restore.js backups/backup-2026-02-20T09-41-30
+

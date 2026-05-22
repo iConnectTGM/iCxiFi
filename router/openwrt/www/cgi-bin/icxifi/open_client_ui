@@ -1,0 +1,62 @@
+#!/bin/sh
+# Redirect to cloud dashboard after ensuring openNDS allows pre-auth access to Client UI host.
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+print_redirect() {
+  target="$1"
+  printf 'Status: 302 Found\r\nLocation: %s\r\nCache-Control: no-store\r\n\r\n' "$target"
+}
+
+print_json() {
+  printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n%s\n' "$1"
+}
+
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+BASE="${BASE%/}"
+BASE="${BASE%/api}"
+
+if [ -z "$BASE" ]; then
+  print_json '{"ok":false,"error":"Missing cloud_base_url"}'
+  exit 0
+fi
+
+HOST="$(printf '%s' "$BASE" | sed -E 's#^[A-Za-z]+://##; s#/.*$##; s#:[0-9]+$##')"
+TARGET="${BASE}/dashboard"
+if [ -n "${QUERY_STRING:-}" ]; then
+  TARGET="${TARGET}?${QUERY_STRING}"
+fi
+
+changed=0
+if uci -q show opennds.@opennds[0] >/dev/null 2>&1; then
+  ensure_port() {
+    p="$1"
+    if ! uci -q show opennds.@opennds[0].walledgarden_port 2>/dev/null | grep -Fq "'${p}'"; then
+      uci add_list opennds.@opennds[0].walledgarden_port="$p"
+      changed=1
+    fi
+  }
+
+  ensure_fqdn() {
+    f="$1"
+    [ -n "$f" ] || return 0
+    if ! uci -q show opennds.@opennds[0].walledgarden_fqdn 2>/dev/null | grep -Fq "'${f}'"; then
+      uci add_list opennds.@opennds[0].walledgarden_fqdn="$f"
+      changed=1
+    fi
+  }
+
+  ensure_port "2080"
+  ensure_fqdn "$HOST"
+  case "$HOST" in
+    *.ngrok-free.app) ensure_fqdn "ngrok-free.app" ;;
+  esac
+
+  if [ "$changed" = "1" ]; then
+    uci commit opennds >/dev/null 2>&1 || true
+    /etc/init.d/opennds restart >/dev/null 2>&1 || true
+  fi
+fi
+
+print_redirect "$TARGET"
+exit 0

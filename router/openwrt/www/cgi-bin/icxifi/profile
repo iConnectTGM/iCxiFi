@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+printf 'Content-Type: application/json\r\n'
+printf 'Cache-Control: public, max-age=60\r\n\r\n'
+
+if [ -s /etc/icxifi/profile_cache.json ]; then
+  cat /etc/icxifi/profile_cache.json
+  printf '\n'
+  exit 0
+fi
+
+cat <<'EOF'
+{"ok":true,"routerId":"","profile":{"mode":"hybrid","currency":"PHP","timezone":"Asia/Manila","voucherLength":8,"rates":[{"amount":5,"minutes":15,"downloadKbps":10000,"uploadKbps":10000,"downloadQuotaKB":0,"uploadQuotaKB":0},{"amount":10,"minutes":35,"downloadKbps":10000,"uploadKbps":10000,"downloadQuotaKB":0,"uploadQuotaKB":0},{"amount":20,"minutes":90,"downloadKbps":10000,"uploadKbps":10000,"downloadQuotaKB":0,"uploadQuotaKB":0}],"speedCalibration":{"downloadPercent":100,"uploadPercent":100},"limits":{"maxCreatePerMinute":60,"maxRedeemPerMinute":120}}}
+EOF
