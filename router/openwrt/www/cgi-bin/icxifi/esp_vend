@@ -263,10 +263,12 @@ queue_sale() {
   code="$3"
   ts="$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')"
   mkdir -p /etc/icxifi
-  printf '%s|%s|%s|%s\n' "$device" "$amount" "$code" "$ts" >> "$PENDING_FILE" 2>/dev/null || true
   if command -v icxifi_record_sale >/dev/null 2>&1; then
-    icxifi_record_sale "coin" "$amount" "$device" "$code" "${targetMac:-}" "${targetIp:-}" 0
+    if icxifi_record_sale "coin" "$amount" "$device" "$code" "${targetMac:-}" "${targetIp:-}" 0; then
+      return 0
+    fi
   fi
+  printf '%s|%s|%s|%s\n' "$device" "$amount" "$code" "$ts" >> "$PENDING_FILE" 2>/dev/null || true
 }
 
 store_session() {

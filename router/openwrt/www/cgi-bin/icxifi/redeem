@@ -250,10 +250,13 @@ if [ -s "$POOL_FILE" ] && grep -q "^${code}|" "$POOL_FILE" 2>/dev/null; then
   sed -i "/^${code}|/d" "$POOL_FILE" 2>/dev/null || true
   ts="$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')"
   mkdir -p /etc/icxifi
-  printf '%s|%s|%s|%s\n' "voucher-local" "$amount" "$code" "$ts" >> /etc/icxifi/pending_sales.txt 2>/dev/null || true
+  sale_queued=0
   if command -v icxifi_record_sale >/dev/null 2>&1; then
-    icxifi_record_sale "voucher-local" "$amount" "voucher-local" "$code" "$clientMac" "$clientIp" 0
+    if icxifi_record_sale "voucher-local" "$amount" "voucher-local" "$code" "$clientMac" "$clientIp" 0; then
+      sale_queued=1
+    fi
   fi
+  [ "$sale_queued" = "1" ] || printf '%s|%s|%s|%s\n' "voucher-local" "$amount" "$code" "$ts" >> /etc/icxifi/pending_sales.txt 2>/dev/null || true
   if command -v icxifi_mark_voucher_used >/dev/null 2>&1; then
     icxifi_mark_voucher_used "$code" "${clientMac:-$clientIp}"
   fi

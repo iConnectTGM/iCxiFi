@@ -42,7 +42,9 @@ Active coin and voucher flows now mirror successful local events into SQLite:
 - granted access -> `sessions`
 - used local vouchers -> `vouchers.used=1`
 
-Flat-file pending sync remains enabled during migration to avoid changing cloud behavior abruptly.
+New local events are queued in SQLite `sync_queue` for background cloud sync. Legacy
+`/etc/icxifi/pending_sales.txt` remains as a fallback when SQLite is unavailable and
+for draining entries created by older builds.
 
 The installer also schedules the watchdog every minute:
 
@@ -140,8 +142,9 @@ If port 80 shows LuCI, edit the install script to set `fasport='2080'` and `wall
 ## Phase 5: ESP offline-first
 
 - `icxifi-replenish-pool` fetches vouchers from `/api/router/vouchers/batch`, stores in `/etc/icxifi/voucher_pool.txt`
-- `icxifi-sync-pending` pushes `/etc/icxifi/pending_sales.txt` to `/api/router/sales/sync`
-- When cloud is down, `esp_vend` uses vouchers from pool and queues sales for later sync
+- `queue_worker` pushes SQLite `sync_queue` rows to `/api/router/sales/sync`
+- `icxifi-sync-pending` still drains legacy `/etc/icxifi/pending_sales.txt`
+- When cloud is down, `esp_vend` uses vouchers from pool and queues sales locally for later sync
 
 ## Phase 3: Config sync
 

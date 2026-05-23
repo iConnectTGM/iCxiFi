@@ -19,7 +19,11 @@ tmp="/tmp/icxifi_sync_queue.$$"
 sqlite3 -separator '|' "$ICXIFI_DB" \
   "SELECT id,type,payload FROM sync_queue WHERE status='pending' ORDER BY created_at LIMIT 25;" > "$tmp"
 
-[ -s "$tmp" ] || { rm -f "$tmp"; exit 0; }
+if [ ! -s "$tmp" ]; then
+  rm -f "$tmp"
+  [ -x /usr/bin/icxifi-sync-pending ] && /usr/bin/icxifi-sync-pending || true
+  exit 0
+fi
 
 while IFS='|' read -r id type payload; do
   [ -n "$id" ] || continue
@@ -34,9 +38,18 @@ while IFS='|' read -r id type payload; do
     -d "$payload" 2>/dev/null || true)"
   if printf '%s' "$resp" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
     sqlite3 "$ICXIFI_DB" "UPDATE sync_queue SET status='synced', updated_at=unixepoch() WHERE id=$id;"
+    case "$type" in
+      sale|sales_event)
+        sale_id="$(printf '%s' "$payload" | sed -n 's/.*"localSaleId"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+        if [ -n "$sale_id" ]; then
+          sqlite3 "$ICXIFI_DB" "UPDATE sales_events SET synced=1 WHERE id=$sale_id;" >/dev/null 2>&1 || true
+        fi
+        ;;
+    esac
   else
     sqlite3 "$ICXIFI_DB" "UPDATE sync_queue SET retry_count=retry_count+1, updated_at=unixepoch() WHERE id=$id;"
   fi
 done < "$tmp"
 
 rm -f "$tmp"
+[ -x /usr/bin/icxifi-sync-pending ] && /usr/bin/icxifi-sync-pending || true

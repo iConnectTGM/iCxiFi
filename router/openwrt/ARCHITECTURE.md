@@ -16,7 +16,9 @@ Current migration state:
 - Versioned local API aliases are added under `/cgi-bin/icxifi/api/v1/`.
 - SQLite schema and bootstrap live under `/usr/lib/icxifi/db/`.
 - Sync queue workers live under `/usr/lib/icxifi/sync/`.
-- Successful coin/voucher grants mirror sales and sessions into SQLite while flat-file pending sync remains active.
+- Successful coin/voucher grants write sales and sessions into SQLite. Sales are
+  queued in SQLite `sync_queue`; the old flat-file queue is only a fallback when
+  SQLite is unavailable.
 
 Target runtime paths:
 
@@ -84,7 +86,8 @@ The sync queue worker runs every 2 minutes:
 */2 * * * * /usr/lib/icxifi/sync/queue_worker
 ```
 
-Legacy `/etc/icxifi/pending_sales.txt` remains supported through `/usr/bin/icxifi-sync-pending`.
+Legacy `/etc/icxifi/pending_sales.txt` remains supported through `/usr/bin/icxifi-sync-pending`
+for fallback and old queued entries.
 
 ## ESP Direction
 

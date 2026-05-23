@@ -33,6 +33,18 @@ icxifi_now_epoch() {
   date +%s 2>/dev/null || printf '0'
 }
 
+icxifi_enqueue_payload() {
+  type="$1"
+  payload="$2"
+
+  icxifi_db_ready || return 1
+
+  type_sql="$(icxifi_sql_escape "$type")"
+  payload_sql="$(icxifi_sql_escape "$payload")"
+  sqlite3 "$ICXIFI_DB" "INSERT INTO sync_queue(type, payload, status, created_at, updated_at)
+    VALUES('$type_sql', '$payload_sql', 'pending', unixepoch(), unixepoch());" >/dev/null 2>&1
+}
+
 icxifi_record_sale() {
   source="$1"
   amount="$2"
@@ -42,7 +54,7 @@ icxifi_record_sale() {
   client_ip="$6"
   synced="${7:-0}"
 
-  icxifi_db_ready || return 0
+  icxifi_db_ready || return 1
   icxifi_is_uint "$amount" || amount=0
   case "$synced" in 1) synced=1 ;; *) synced=0 ;; esac
 
@@ -51,12 +63,25 @@ icxifi_record_sale() {
   voucher_sql="$(icxifi_sql_escape "$voucher_code")"
   mac_sql="$(icxifi_sql_escape "$client_mac")"
   ip_sql="$(icxifi_sql_escape "$client_ip")"
+  ts="$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')"
 
-  sqlite3 "$ICXIFI_DB" "INSERT INTO sales_events(source, amount, device_id, voucher_code, client_mac, client_ip, timestamp, synced)
-    VALUES('$source_sql', $amount, '$device_sql', '$voucher_sql', '$mac_sql', '$ip_sql', unixepoch(), $synced);" >/dev/null 2>&1 || return 0
+  sale_id="$(sqlite3 "$ICXIFI_DB" "INSERT INTO sales_events(source, amount, device_id, voucher_code, client_mac, client_ip, timestamp, synced)
+    VALUES('$source_sql', $amount, '$device_sql', '$voucher_sql', '$mac_sql', '$ip_sql', unixepoch(), $synced);
+    SELECT last_insert_rowid();" 2>/dev/null)" || return 1
 
-  # Flat-file pending sync remains active until the sync worker is fully migrated.
-  # Avoid queueing the same sale in sync_queue here, or the cloud can receive duplicates.
+  [ "$synced" = "0" ] || return 0
+
+  payload="$(printf '{"localSaleId":%s,"items":[{"deviceId":"%s","amount":%s,"voucherCode":"%s","ts":"%s","source":"%s","clientMac":"%s","clientIp":"%s"}]}' \
+    "${sale_id:-0}" \
+    "$(icxifi_json_escape "$device_id")" \
+    "$amount" \
+    "$(icxifi_json_escape "$voucher_code")" \
+    "$(icxifi_json_escape "$ts")" \
+    "$(icxifi_json_escape "$source")" \
+    "$(icxifi_json_escape "$client_mac")" \
+    "$(icxifi_json_escape "$client_ip")")"
+  icxifi_enqueue_payload "sales_event" "$payload" || return 1
+  return 0
 }
 
 icxifi_record_session() {
