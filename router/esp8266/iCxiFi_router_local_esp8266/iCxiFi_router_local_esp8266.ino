@@ -7,12 +7,12 @@
 #include <ArduinoJson.h>
 #include <bearssl/bearssl.h>
 
-// Requested pin defaults:
-// - coin pulse input: D4
-// - coin set/powercut relay: D8
+// Recommended safe pin defaults for ESP8266 boot stability:
+// - coin pulse input: D5 / GPIO14
+// - coin set/powercut relay: D6 / GPIO12
 // - blinker LED: RX (GPIO3)
-static const uint8_t COIN_PIN = D4;      // coin pulse input
-static const uint8_t COIN_SET_PIN = D8;  // coin acceptor / powercut relay enable
+static const uint8_t COIN_PIN = D5;      // coin pulse input
+static const uint8_t COIN_SET_PIN = D6;  // coin acceptor / powercut relay enable
 static const uint8_t LED_PIN = 3;        // RX (GPIO3) local blinker
 
 static const char *CONFIG_PATH = "/config.json";
@@ -441,7 +441,7 @@ static void handleRoot() {
   page += "@media(max-width:700px){.row{grid-template-columns:1fr;}}";
   page += "</style></head><body><div class='wrap'><div class='card'>";
   page += "<h1>iCxiFi ESP8266 Router Mode</h1>";
-  page += "<p>Default pins: Coin <b>D4</b>, Coin Set/Powercut <b>D8</b>, Blinker <b>RX</b>.";
+  page += "<p>Default pins: Coin <b>D5</b>, Coin Set/Powercut <b>D6</b>, Blinker <b>RX</b>.";
   page += " Router local API: <code>/cgi-bin/icxifi</code>.</p>";
   page += "<p class='muted'>Default management WLAN: <b>" + String(DEFAULT_MGMT_SSID) + "</b> (hidden supported).</p>";
   page += "<form method='POST' action='/save'>";
