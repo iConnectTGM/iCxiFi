@@ -15,6 +15,7 @@ PROFILE_FILE="/etc/icxifi/profile_cache.json"
 SPEED_FACTOR_FILE="/etc/icxifi/speed_factor_percent"
 
 [ -r /usr/lib/icxifi/db/events.sh ] && . /usr/lib/icxifi/db/events.sh
+[ -r /usr/lib/icxifi/vouchers/state.sh ] && . /usr/lib/icxifi/vouchers/state.sh
 
 print_json() {
   printf 'Content-Type: application/json\r\n\r\n%s\n' "$1"
@@ -169,6 +170,89 @@ rate_limit_check() {
   return 0
 }
 
+redeem_local_voucher() {
+  local_source="$1"
+  grant_mins="$2"
+  amount="$3"
+  expires_at="$4"
+
+  grant_mins="${grant_mins:-0}"
+  amount="${amount:-0}"
+  if ! is_uint "$grant_mins" || [ "$grant_mins" -lt 1 ]; then
+    print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid local voucher"}'
+    exit 0
+  fi
+
+  grant_dl=10000
+  grant_ul=10000
+  grant_dlq=0
+  grant_ulq=0
+  legacy_speed_factor="$(read_legacy_speed_factor)"
+  speed_factor_dl="$(read_profile_speed_factor downloadPercent "$legacy_speed_factor")"
+  speed_factor_ul="$(read_profile_speed_factor uploadPercent "$legacy_speed_factor")"
+  grant_dl="$(apply_speed_factor "$grant_dl" "$speed_factor_dl")"
+  grant_ul="$(apply_speed_factor "$grant_ul" "$speed_factor_ul")"
+
+  auth_ok=0
+  nds_out=""
+  if command -v ndsctl >/dev/null 2>&1 && [ -n "$clientIp" ]; then
+    auth_try=1
+    while [ "$auth_try" -le 5 ]; do
+      if nds_out="$(ndsctl auth "$clientIp" "$grant_mins" "$grant_ul" "$grant_dl" "$grant_ulq" "$grant_dlq" "icxifi|local_voucher|code=$code" 2>&1)"; then
+        auth_ok=1
+        log_debug "local_voucher_auth_ok source=$local_source ip=$clientIp code=$code try=$auth_try"
+        break
+      fi
+      log_debug "local_voucher_auth_retry source=$local_source ip=$clientIp code=$code try=$auth_try nds=$(printf '%s' "$nds_out" | tr '\n' ' ' | cut -c1-160)"
+      sleep 1
+      auth_try=$((auth_try + 1))
+    done
+  fi
+
+  if [ "$auth_ok" != "1" ]; then
+    print_status_json 502 "Bad Gateway" '{"ok":false,"error":"openNDS auth failed"}'
+    log_debug "local_voucher_auth_failed source=$local_source ip=$clientIp code=$code nds=$(printf '%s' "$nds_out" | tr '\n' ' ' | cut -c1-180)"
+    exit 0
+  fi
+
+  if [ "$local_source" = "pool" ]; then
+    sed -i "/^${code}|/d" "$POOL_FILE" 2>/dev/null || true
+  fi
+
+  ts="$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')"
+  mkdir -p /etc/icxifi
+  sale_queued=0
+  if command -v icxifi_record_sale >/dev/null 2>&1; then
+    if icxifi_record_sale "voucher-local" "$amount" "voucher-local" "$code" "$clientMac" "$clientIp" 0; then
+      sale_queued=1
+    fi
+  fi
+  [ "$sale_queued" = "1" ] || printf '%s|%s|%s|%s\n' "voucher-local" "$amount" "$code" "$ts" >> /etc/icxifi/pending_sales.txt 2>/dev/null || true
+  if command -v icxifi_voucher_mark_used >/dev/null 2>&1; then
+    icxifi_voucher_mark_used "$code" "${clientMac:-$clientIp}" || true
+  elif command -v icxifi_mark_voucher_used >/dev/null 2>&1; then
+    icxifi_mark_voucher_used "$code" "${clientMac:-$clientIp}" || true
+  fi
+
+  SESS_DIR="/tmp/icxifi_sessions"
+  mkdir -p "$SESS_DIR"
+  now_epoch="$(date +%s)"
+  if [ -n "$clientMac" ]; then
+    sess_key="$(echo "$clientMac" | tr -d ':-' | tr 'a-z' 'A-Z')"
+  else
+    sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
+  fi
+  printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
+    "$now_epoch" "$grant_mins" "$grant_dl" "$grant_ul" "${clientMac:-}" "${clientIp:-}" > "$SESS_DIR/${sess_key}" 2>/dev/null || true
+  if command -v icxifi_record_session >/dev/null 2>&1; then
+    icxifi_record_session "$clientMac" "$clientIp" "$grant_mins" "$grant_dl" "$grant_ul" "$code" "voucher-local"
+  fi
+
+  log_debug "local_voucher_redeem_ok source=$local_source ip=$clientIp mac=$clientMac code=$code mins=$grant_mins amount=$amount"
+  print_json "$(printf '{"ok":true,"mode":"voucher_local","source":"%s","offline":true,"synced":false,"grant":{"minutes":%s,"downloadKbps":%s,"uploadKbps":%s},"voucher":{"code":"%s","minutes":%s,"amount":%s,"status":"redeemed","expiresAt":"%s"}}' "$local_source" "$grant_mins" "$grant_dl" "$grant_ul" "$code" "$grant_mins" "$amount" "$expires_at")"
+  exit 0
+}
+
 code=""
 clientMac=""
 clientIp="${REMOTE_ADDR:-}"
@@ -202,82 +286,25 @@ fi
 # Local-first voucher redeem: router-pool vouchers grant OpenNDS access before
 # any cloud call, then queue the sale for the next background sync.
 POOL_FILE="/etc/icxifi/voucher_pool.txt"
+if command -v icxifi_voucher_find_available >/dev/null 2>&1; then
+  sqlite_voucher="$(icxifi_voucher_find_available "$code" | head -n 1 || true)"
+  if [ -n "$sqlite_voucher" ]; then
+    IFS='|' read -r v_code grant_mins amount expires_epoch <<EOF_ROW
+$sqlite_voucher
+EOF_ROW
+    unset IFS
+    expires_at="$expires_epoch"
+    [ "$expires_at" = "0" ] && expires_at=""
+    redeem_local_voucher "sqlite" "$grant_mins" "$amount" "$expires_at"
+  fi
+fi
+
 if [ -s "$POOL_FILE" ] && grep -q "^${code}|" "$POOL_FILE" 2>/dev/null; then
   line="$(grep "^${code}|" "$POOL_FILE" | head -n 1)"
   grant_mins="$(printf '%s' "$line" | cut -d'|' -f2)"
   amount="$(printf '%s' "$line" | cut -d'|' -f3)"
   expires_at="$(printf '%s' "$line" | cut -d'|' -f4)"
-  grant_mins="${grant_mins:-0}"
-  amount="${amount:-0}"
-
-  if ! is_uint "$grant_mins" || [ "$grant_mins" -lt 1 ]; then
-    print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid local voucher"}'
-    exit 0
-  fi
-
-  grant_dl=10000
-  grant_ul=10000
-  grant_dlq=0
-  grant_ulq=0
-  legacy_speed_factor="$(read_legacy_speed_factor)"
-  speed_factor_dl="$(read_profile_speed_factor downloadPercent "$legacy_speed_factor")"
-  speed_factor_ul="$(read_profile_speed_factor uploadPercent "$legacy_speed_factor")"
-  grant_dl="$(apply_speed_factor "$grant_dl" "$speed_factor_dl")"
-  grant_ul="$(apply_speed_factor "$grant_ul" "$speed_factor_ul")"
-
-  auth_ok=0
-  nds_out=""
-  if command -v ndsctl >/dev/null 2>&1 && [ -n "$clientIp" ]; then
-    auth_try=1
-    while [ "$auth_try" -le 5 ]; do
-      if nds_out="$(ndsctl auth "$clientIp" "$grant_mins" "$grant_ul" "$grant_dl" "$grant_ulq" "$grant_dlq" "icxifi|local_voucher|code=$code" 2>&1)"; then
-        auth_ok=1
-        log_debug "local_voucher_auth_ok ip=$clientIp code=$code try=$auth_try"
-        break
-      fi
-      log_debug "local_voucher_auth_retry ip=$clientIp code=$code try=$auth_try nds=$(printf '%s' "$nds_out" | tr '\n' ' ' | cut -c1-160)"
-      sleep 1
-      auth_try=$((auth_try + 1))
-    done
-  fi
-
-  if [ "$auth_ok" != "1" ]; then
-    print_status_json 502 "Bad Gateway" '{"ok":false,"error":"openNDS auth failed"}'
-    log_debug "local_voucher_auth_failed ip=$clientIp code=$code nds=$(printf '%s' "$nds_out" | tr '\n' ' ' | cut -c1-180)"
-    exit 0
-  fi
-
-  sed -i "/^${code}|/d" "$POOL_FILE" 2>/dev/null || true
-  ts="$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')"
-  mkdir -p /etc/icxifi
-  sale_queued=0
-  if command -v icxifi_record_sale >/dev/null 2>&1; then
-    if icxifi_record_sale "voucher-local" "$amount" "voucher-local" "$code" "$clientMac" "$clientIp" 0; then
-      sale_queued=1
-    fi
-  fi
-  [ "$sale_queued" = "1" ] || printf '%s|%s|%s|%s\n' "voucher-local" "$amount" "$code" "$ts" >> /etc/icxifi/pending_sales.txt 2>/dev/null || true
-  if command -v icxifi_mark_voucher_used >/dev/null 2>&1; then
-    icxifi_mark_voucher_used "$code" "${clientMac:-$clientIp}"
-  fi
-
-  SESS_DIR="/tmp/icxifi_sessions"
-  mkdir -p "$SESS_DIR"
-  now_epoch="$(date +%s)"
-  if [ -n "$clientMac" ]; then
-    sess_key="$(echo "$clientMac" | tr -d ':-' | tr 'a-z' 'A-Z')"
-  else
-    sess_key="ip_$(echo "$clientIp" | tr -c 'A-Za-z0-9' '_')"
-  fi
-  printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
-    "$now_epoch" "$grant_mins" "$grant_dl" "$grant_ul" "${clientMac:-}" "${clientIp:-}" > "$SESS_DIR/${sess_key}" 2>/dev/null || true
-  if command -v icxifi_record_session >/dev/null 2>&1; then
-    icxifi_record_session "$clientMac" "$clientIp" "$grant_mins" "$grant_dl" "$grant_ul" "$code" "voucher-local"
-  fi
-
-  log_debug "local_voucher_redeem_ok ip=$clientIp mac=$clientMac code=$code mins=$grant_mins amount=$amount"
-  print_json "$(printf '{"ok":true,"mode":"voucher_local","offline":true,"synced":false,"grant":{"minutes":%s,"downloadKbps":%s,"uploadKbps":%s},"voucher":{"code":"%s","minutes":%s,"amount":%s,"status":"redeemed","expiresAt":"%s"}}' "$grant_mins" "$grant_dl" "$grant_ul" "$code" "$grant_mins" "$amount" "$expires_at")"
-  exit 0
+  redeem_local_voucher "pool" "$grant_mins" "$amount" "$expires_at"
 fi
 
 if ! require_file "$BASE_FILE" || ! require_file "$RID_FILE" || ! require_file "$APIKEY_FILE"; then

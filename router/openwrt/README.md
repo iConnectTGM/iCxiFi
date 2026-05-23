@@ -42,6 +42,7 @@ Active coin and voucher flows now mirror successful local events into SQLite:
 - granted access -> `sessions`
 - used local vouchers -> `vouchers.used=1`
 - pause/resume/status state -> SQLite `sessions` first, temp files as fallback
+- local voucher inventory -> SQLite `vouchers` first, `voucher_pool.txt` fallback
 
 New local events are queued in SQLite `sync_queue` for background cloud sync. Legacy
 `/etc/icxifi/pending_sales.txt` remains as a fallback when SQLite is unavailable and
@@ -52,6 +53,7 @@ The installer also schedules the watchdog every minute:
 ```text
 * * * * * /usr/lib/icxifi/watchdog/icxifi-watchdog.sh
 */5 * * * * /usr/lib/icxifi/sessions/cleanup
+17 * * * * /usr/lib/icxifi/vouchers/cleanup
 ```
 
 Watchdog logs:
@@ -143,7 +145,7 @@ If port 80 shows LuCI, edit the install script to set `fasport='2080'` and `wall
 
 ## Phase 5: ESP offline-first
 
-- `icxifi-replenish-pool` fetches vouchers from `/api/router/vouchers/batch`, stores in `/etc/icxifi/voucher_pool.txt`
+- `icxifi-replenish-pool` fetches vouchers from `/api/router/vouchers/batch`, stores in SQLite `vouchers`, and mirrors to `/etc/icxifi/voucher_pool.txt` for compatibility
 - `queue_worker` pushes SQLite `sync_queue` rows to `/api/router/sales/sync`
 - `icxifi-sync-pending` still drains legacy `/etc/icxifi/pending_sales.txt`
 - When cloud is down, `esp_vend` uses vouchers from pool and queues sales locally for later sync

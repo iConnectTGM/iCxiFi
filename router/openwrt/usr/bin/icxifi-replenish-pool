@@ -9,6 +9,8 @@ export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 POOL_LINES="/etc/icxifi/voucher_pool.txt"
 POOL_MAX="${ICXIFI_POOL_MAX:-15}"
 
+[ -r /usr/lib/icxifi/vouchers/state.sh ] && . /usr/lib/icxifi/vouchers/state.sh
+
 BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
 RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
 APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
@@ -17,6 +19,12 @@ APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
 
 current=0
 [ -s "$POOL_LINES" ] && current="$(wc -l < "$POOL_LINES")"
+if command -v icxifi_voucher_db_ready >/dev/null 2>&1 && icxifi_voucher_db_ready; then
+  icxifi_voucher_import_pool "$POOL_LINES" >/dev/null 2>&1 || true
+  db_current="$(sqlite3 "$ICXIFI_DB" "SELECT count(1) FROM vouchers WHERE used=0 AND (expires_at IS NULL OR expires_at=0 OR expires_at > unixepoch());" 2>/dev/null || printf '0')"
+  case "$db_current" in ''|*[!0-9]*) db_current=0 ;; esac
+  [ "$db_current" -gt "$current" ] && current="$db_current"
+fi
 [ "$current" -ge "$POOL_MAX" ] 2>/dev/null && exit 0
 
 need=$((POOL_MAX - current))
@@ -45,7 +53,10 @@ if command -v jsonfilter >/dev/null 2>&1; then
     minutes="$(jsonfilter -i "$tmp_resp" -e "@.vouchers[$i].minutes" 2>/dev/null || echo 0)"
     amount="$(jsonfilter -i "$tmp_resp" -e "@.vouchers[$i].amount" 2>/dev/null || echo 0)"
     expires="$(jsonfilter -i "$tmp_resp" -e "@.vouchers[$i].expiresAt" 2>/dev/null || echo "")"
-    printf '%s|%s|%s|%s\n' "$code" "${minutes:-0}" "${amount:-0}" "$expires" >> "$POOL_LINES"
+    if command -v icxifi_voucher_add >/dev/null 2>&1 && icxifi_voucher_add "$code" "${minutes:-0}" "${amount:-0}" "$expires"; then
+      :
+    fi
+    grep -q "^${code}|" "$POOL_LINES" 2>/dev/null || printf '%s|%s|%s|%s\n' "$code" "${minutes:-0}" "${amount:-0}" "$expires" >> "$POOL_LINES"
     i=$((i + 1))
   done
 fi

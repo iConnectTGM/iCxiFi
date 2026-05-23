@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+[ -r /usr/lib/icxifi/vouchers/state.sh ] && . /usr/lib/icxifi/vouchers/state.sh
+
+pool="${1:-/etc/icxifi/voucher_pool.txt}"
+if command -v icxifi_voucher_import_pool >/dev/null 2>&1; then
+  icxifi_voucher_import_pool "$pool"
+fi

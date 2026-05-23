@@ -21,6 +21,8 @@ Current migration state:
   SQLite is unavailable.
 - Session status, pause, resume, and expiry now prefer SQLite `sessions`, with
   `/tmp/icxifi_sessions` and `/tmp/icxifi_paused` kept as compatibility fallback.
+- Voucher inventory and local voucher redemption now prefer SQLite `vouchers`,
+  with `/etc/icxifi/voucher_pool.txt` kept as compatibility fallback.
 
 Target runtime paths:
 
@@ -87,6 +89,7 @@ The sync queue worker runs every 2 minutes:
 ```text
 */2 * * * * /usr/lib/icxifi/sync/queue_worker
 */5 * * * * /usr/lib/icxifi/sessions/cleanup
+17 * * * * /usr/lib/icxifi/vouchers/cleanup
 ```
 
 Legacy `/etc/icxifi/pending_sales.txt` remains supported through `/usr/bin/icxifi-sync-pending`

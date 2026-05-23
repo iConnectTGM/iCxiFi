@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+[ -r /usr/lib/icxifi/vouchers/state.sh ] && . /usr/lib/icxifi/vouchers/state.sh
+
+if command -v icxifi_voucher_cleanup_expired >/dev/null 2>&1; then
+  icxifi_voucher_cleanup_expired || true
+fi
+
+exit 0
