@@ -36,6 +36,14 @@ Phase A introduces the target local-first structure without removing the working
 
 The installer attempts to install `sqlite3-cli`, initializes `/etc/icxifi/icxifi.db`, and schedules the queue worker every 2 minutes. If SQLite is not available, existing flat-file behavior continues.
 
+Active coin and voucher flows now mirror successful local events into SQLite:
+
+- coin/voucher sales -> `sales_events`
+- granted access -> `sessions`
+- used local vouchers -> `vouchers.used=1`
+
+Flat-file pending sync remains enabled during migration to avoid changing cloud behavior abruptly.
+
 The installer also schedules the watchdog every minute:
 
 ```text

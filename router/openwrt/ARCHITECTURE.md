@@ -16,6 +16,7 @@ Current migration state:
 - Versioned local API aliases are added under `/cgi-bin/icxifi/api/v1/`.
 - SQLite schema and bootstrap live under `/usr/lib/icxifi/db/`.
 - Sync queue workers live under `/usr/lib/icxifi/sync/`.
+- Successful coin/voucher grants mirror sales and sessions into SQLite while flat-file pending sync remains active.
 
 Target runtime paths:
 
