@@ -91,6 +91,13 @@ The ESP signs:
 amount={amount}&clientIp={clientIp}&clientMac={clientMac}&deviceId={deviceId}&nonce={nonce}&ts={ts}
 ```
 
+For coin-slot mode where the ESP does not know the phone client yet, `clientIp`
+and `clientMac` are empty in the canonical string:
+
+```text
+amount={amount}&clientIp=&clientMac=&deviceId={deviceId}&nonce={nonce}&ts={ts}
+```
+
 ## Quick deploy
 
 1. **Copy and drag** the `router/openwrt/*` folder contents to the router (e.g. via WinSCP, FileZilla, or Windows explorer over SMB/network share). Preserve the directory structure: `usr/bin/` → `/usr/bin/`, `www/` → `/www/`, etc.

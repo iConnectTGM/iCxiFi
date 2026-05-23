@@ -29,4 +29,15 @@ Preferred router call:
 GET http://10.0.0.1:2080/cgi-bin/icxifi/api/v1/coin?amount=5&deviceId=vendo-1&clientIp=10.0.0.123
 ```
 
+Signed coin call:
+
+```text
+amount={amount}&clientIp=&clientMac=&deviceId={deviceId}&nonce={nonce}&ts={router_epoch}
+sig=HMAC_SHA256(secret, canonical)
+```
+
+The ESP syncs router time from `/cgi-bin/icxifi/api/v1/health`, signs coin
+requests when `hmacSecret` is configured, debounces pulses, persists queued
+coin value in LittleFS, and retries against the local router API.
+
 The legacy sketch remains under `router/esp8266/` until it is split into this structure.

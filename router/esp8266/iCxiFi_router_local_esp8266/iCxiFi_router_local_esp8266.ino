@@ -5,6 +5,7 @@
 #include <ESP8266HTTPClient.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#include <bearssl/bearssl.h>
 
 // Requested pin defaults:
 // - coin pulse input: D4
@@ -25,6 +26,8 @@ static const unsigned long ACTIVATION_POLL_MS = 60000;
 static const unsigned long STATE_POLL_MS = 90000;
 static const unsigned long PROFILE_POLL_MS = 600000;
 static const unsigned long RECONNECT_INTERVAL_MS = 20000;
+static const unsigned long TIME_SYNC_POLL_MS = 3600000;
+static const uint16_t MAX_PENDING_AMOUNT = 500;
 // Default hidden management WLAN for ESP fleet (override per device in UI if needed)
 static const char *DEFAULT_MGMT_SSID = "iCxiFi-MGMT";
 static const char *DEFAULT_MGMT_PASS = "icxifi12345";
@@ -38,6 +41,7 @@ struct Config {
   String pass;
   String host;         // router local host:port
   String deviceIdTag;  // optional deviceId override
+  String hmacSecret;   // optional ESP/router shared secret
   uint16_t coinValue;  // value per pulse
   uint16_t debounceMs;
   uint16_t gapMs;
@@ -84,9 +88,13 @@ static unsigned long lastActivationAtMs = 0;
 static unsigned long lastActivationPollMs = 0;
 static unsigned long lastStatePollMs = 0;
 static unsigned long lastProfilePollMs = 0;
+static unsigned long lastTimeSyncPollMs = 0;
 static unsigned long lastSendMs = 0;
 static unsigned long lastReconnectMs = 0;
 static unsigned long vendRetryAfterUntilMs = 0;
+static unsigned long routerEpochBase = 0;
+static unsigned long routerEpochMillis = 0;
+static uint32_t nonceCounter = 0;
 
 static String deviceId() {
   return WiFi.macAddress();
@@ -201,6 +209,71 @@ static String urlEncode(const String &in) {
   return out;
 }
 
+static String hexEncode(const uint8_t *bytes, size_t len) {
+  static const char *hex = "0123456789abcdef";
+  String out;
+  out.reserve(len * 2);
+  for (size_t i = 0; i < len; i++) {
+    out += hex[(bytes[i] >> 4) & 0x0F];
+    out += hex[bytes[i] & 0x0F];
+  }
+  return out;
+}
+
+static String hmacSha256Hex(const String &secret, const String &message) {
+  uint8_t out[32];
+  br_hmac_key_context keyCtx;
+  br_hmac_context hmacCtx;
+  br_hmac_key_init(&keyCtx, &br_sha256_vtable, secret.c_str(), secret.length());
+  br_hmac_init(&hmacCtx, &keyCtx, 0);
+  br_hmac_update(&hmacCtx, message.c_str(), message.length());
+  br_hmac_out(&hmacCtx, out);
+  return hexEncode(out, sizeof(out));
+}
+
+static bool isLeapYear(int y) {
+  return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+}
+
+static unsigned long epochFromUtc(int year, int month, int day, int hour, int minute, int second) {
+  static const uint8_t monthDays[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+  unsigned long days = 0;
+  for (int y = 1970; y < year; y++) {
+    days += isLeapYear(y) ? 366UL : 365UL;
+  }
+  for (int m = 1; m < month; m++) {
+    days += monthDays[m - 1];
+    if (m == 2 && isLeapYear(year)) days++;
+  }
+  days += (unsigned long)(day - 1);
+  return days * 86400UL + (unsigned long)hour * 3600UL + (unsigned long)minute * 60UL + (unsigned long)second;
+}
+
+static bool parseIsoEpoch(const String &iso, unsigned long *epochOut) {
+  if (iso.length() < 19) return false;
+  int year = iso.substring(0, 4).toInt();
+  int month = iso.substring(5, 7).toInt();
+  int day = iso.substring(8, 10).toInt();
+  int hour = iso.substring(11, 13).toInt();
+  int minute = iso.substring(14, 16).toInt();
+  int second = iso.substring(17, 19).toInt();
+  if (year < 2024 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) {
+    return false;
+  }
+  *epochOut = epochFromUtc(year, month, day, hour, minute, second);
+  return true;
+}
+
+static unsigned long currentRouterEpoch() {
+  if (routerEpochBase == 0 || routerEpochMillis == 0) return 0;
+  return routerEpochBase + ((millis() - routerEpochMillis) / 1000UL);
+}
+
+static String nextNonce() {
+  nonceCounter++;
+  return String(ESP.getChipId(), HEX) + "-" + String(millis(), HEX) + "-" + String(nonceCounter, HEX);
+}
+
 static void blink(uint16_t ms) {
   digitalWrite(LED_PIN, HIGH);
   delay(ms);
@@ -237,11 +310,12 @@ static void loadQueue() {
 }
 
 static void saveConfig() {
-  DynamicJsonDocument doc(512);
+  DynamicJsonDocument doc(768);
   doc["ssid"] = cfg.ssid;
   doc["pass"] = cfg.pass;
   doc["host"] = cfg.host;
   doc["deviceIdTag"] = cfg.deviceIdTag;
+  doc["hmacSecret"] = cfg.hmacSecret;
   doc["coinValue"] = cfg.coinValue;
   doc["debounceMs"] = cfg.debounceMs;
   doc["gapMs"] = cfg.gapMs;
@@ -258,6 +332,7 @@ static void loadConfig() {
   cfg.pass = DEFAULT_MGMT_PASS;
   cfg.host = DEFAULT_HOST;
   cfg.deviceIdTag = "";
+  cfg.hmacSecret = "";
   cfg.coinValue = 1;
   cfg.debounceMs = 30;
   cfg.gapMs = 700;
@@ -269,7 +344,7 @@ static void loadConfig() {
   File f = LittleFS.open(CONFIG_PATH, "r");
   if (!f) return;
 
-  DynamicJsonDocument doc(512);
+  DynamicJsonDocument doc(768);
   DeserializationError err = deserializeJson(doc, f);
   f.close();
   if (err) return;
@@ -278,6 +353,7 @@ static void loadConfig() {
   cfg.pass = String(doc["pass"] | "");
   cfg.host = normalizeHost(String(doc["host"] | DEFAULT_HOST));
   cfg.deviceIdTag = String(doc["deviceIdTag"] | "");
+  cfg.hmacSecret = String(doc["hmacSecret"] | "");
   cfg.coinValue = uint16_t(doc["coinValue"] | 1);
   cfg.debounceMs = uint16_t(doc["debounceMs"] | 30);
   cfg.gapMs = uint16_t(doc["gapMs"] | 700);
@@ -310,6 +386,8 @@ static void handleStatus() {
   doc["host"] = normalizeHost(cfg.host);
   doc["usingDefaultMgmt"] = usingDefaultMgmt;
   doc["deviceId"] = cfg.deviceIdTag.length() ? cfg.deviceIdTag : deviceId();
+  doc["hmacConfigured"] = cfg.hmacSecret.length() > 0;
+  doc["routerTimeSynced"] = currentRouterEpoch() > 0;
   doc["pendingAmount"] = pendingAmount;
   doc["portalActive"] = portalActive;
   doc["coinEnabled"] = coinEnabled;
@@ -377,6 +455,9 @@ static void handleRoot() {
   page += "<div><label>Device ID (optional)</label><input name='deviceIdTag' value='" + htmlEscape(cfg.deviceIdTag) + "' placeholder='vendo-1'/></div>";
   page += "<div><label>Coin Value (PHP per pulse)</label><input type='number' min='1' step='1' name='coinValue' value='" + String(cfg.coinValue) + "'/></div>";
   page += "</div>";
+  page += "<label>HMAC Secret (optional)</label>";
+  page += "<input type='password' name='hmacSecret' value='" + htmlEscape(cfg.hmacSecret) + "' placeholder='paste /usr/lib/icxifi/config/esp-secret value'/>";
+  page += "<div class='muted'>When set, coin requests are signed with HMAC SHA256. Leave blank only during testing.</div>";
   page += "<div class='row'>";
   page += "<div><label>Debounce (ms)</label><input type='number' min='10' max='1000' name='debounceMs' value='" + String(cfg.debounceMs) + "'/></div>";
   page += "<div><label>Gap (ms)</label><input type='number' min='100' max='10000' name='gapMs' value='" + String(cfg.gapMs) + "'/></div>";
@@ -426,6 +507,8 @@ static void handleSave() {
   cfg.ssid = server.arg("ssid");
   cfg.pass = server.arg("pass");
   cfg.deviceIdTag = server.arg("deviceIdTag");
+  cfg.hmacSecret = server.arg("hmacSecret");
+  cfg.hmacSecret.trim();
 
   if (server.hasArg("coinValue")) {
     int v = server.arg("coinValue").toInt();
@@ -503,6 +586,10 @@ static void handleVendNow() {
   uint32_t amount = (uint32_t)server.arg("amount").toInt();
   if (amount == 0) {
     server.send(400, "application/json", "{\"ok\":false,\"error\":\"amount required\"}");
+    return;
+  }
+  if (pendingAmount + amount > MAX_PENDING_AMOUNT) {
+    server.send(429, "application/json", "{\"ok\":false,\"error\":\"pending queue full\"}");
     return;
   }
   pendingAmount += amount;
@@ -744,6 +831,22 @@ static void refreshProfile() {
   lastProfileAtMs = millis();
 }
 
+static void syncRouterTime() {
+  String resp;
+  int code = 0;
+  String err;
+  bool ok = httpGetEx("/cgi-bin/icxifi/api/v1/health", &resp, &code, &err);
+  if (!ok) return;
+
+  DynamicJsonDocument doc(1536);
+  if (deserializeJson(doc, resp)) return;
+  String iso = String(doc["time"] | "");
+  unsigned long epoch = 0;
+  if (!parseIsoEpoch(iso, &epoch)) return;
+  routerEpochBase = epoch;
+  routerEpochMillis = millis();
+}
+
 static uint16_t readRetryAfterSeconds(const String &resp) {
   DynamicJsonDocument doc(512);
   if (deserializeJson(doc, resp)) return 0;
@@ -768,7 +871,26 @@ static bool vendAmount(uint32_t amount) {
     return false;
   }
 
-  String path = "/cgi-bin/icxifi/esp_vend?amount=" + String(amount) + "&deviceId=" + urlEncode(effectiveDeviceId());
+  String devId = effectiveDeviceId();
+  String path = "/cgi-bin/icxifi/api/v1/coin?amount=" + String(amount) + "&deviceId=" + urlEncode(devId);
+  if (cfg.hmacSecret.length() > 0) {
+    unsigned long ts = currentRouterEpoch();
+    if (ts == 0) {
+      syncRouterTime();
+      ts = currentRouterEpoch();
+    }
+    if (ts == 0) {
+      lastVendOk = false;
+      lastVendCode = 0;
+      lastVendErr = "router_time_not_synced";
+      lastVendAtMs = millis();
+      return false;
+    }
+    String nonce = nextNonce();
+    String canonical = "amount=" + String(amount) + "&clientIp=&clientMac=&deviceId=" + devId + "&nonce=" + nonce + "&ts=" + String(ts);
+    String sig = hmacSha256Hex(cfg.hmacSecret, canonical);
+    path += "&ts=" + String(ts) + "&nonce=" + urlEncode(nonce) + "&sig=" + sig;
+  }
 
   String resp;
   int code = 0;
@@ -837,6 +959,13 @@ static void processCoinPulses() {
   interrupts();
 
   uint32_t amount = (uint32_t)pulses * (uint32_t)cfg.coinValue;
+  if (amount == 0) return;
+  if (pendingAmount + amount > MAX_PENDING_AMOUNT) {
+    lastVendOk = false;
+    lastVendErr = "pending_queue_full";
+    lastVendAtMs = millis();
+    return;
+  }
   pendingAmount += amount;
   saveQueue();
 
@@ -883,6 +1012,7 @@ void setup() {
   if (wifiConnected) {
     startStaServer();
     staServerStarted = true;
+    syncRouterTime();
     refreshActivation();
     refreshState();
     refreshProfile();
@@ -905,6 +1035,7 @@ void loop() {
         startStaServer();
         staServerStarted = true;
       }
+      syncRouterTime();
       refreshActivation();
       refreshState();
       refreshProfile();
@@ -956,6 +1087,10 @@ void loop() {
     if (now - lastProfilePollMs > PROFILE_POLL_MS) {
       lastProfilePollMs = now;
       refreshProfile();
+    }
+    if (now - lastTimeSyncPollMs > TIME_SYNC_POLL_MS || (cfg.hmacSecret.length() > 0 && currentRouterEpoch() == 0)) {
+      lastTimeSyncPollMs = now;
+      syncRouterTime();
     }
 
     if (!routerActivated || coinForcedOff) {
