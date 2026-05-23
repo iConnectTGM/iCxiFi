@@ -1,0 +1,107 @@
+#!/bin/sh
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+DB="${ICXIFI_DB:-/etc/icxifi/icxifi.db}"
+BASE_FILE="/etc/icxifi/cloud_base_url"
+RID_FILE="/etc/icxifi/router_id"
+APIKEY_FILE="/etc/icxifi/router_api_key"
+LICENSE_FILE="/etc/icxifi/license_key"
+WATCHDOG_LOG="/usr/lib/icxifi/watchdog/logs/watchdog.log"
+
+json_escape() {
+  printf '%s' "${1:-}" | tr -d '\r' | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g'
+}
+
+is_ok_bool() {
+  if "$@" >/dev/null 2>&1; then
+    printf 'true'
+  else
+    printf 'false'
+  fi
+}
+
+sqlite_count() {
+  sql="$1"
+  if command -v sqlite3 >/dev/null 2>&1 && [ -s "$DB" ]; then
+    out="$(sqlite3 "$DB" "$sql" 2>/dev/null || printf '0')"
+    case "$out" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$out" ;; esac
+  else
+    printf '0'
+  fi
+}
+
+sqlite_string() {
+  sql="$1"
+  if command -v sqlite3 >/dev/null 2>&1 && [ -s "$DB" ]; then
+    sqlite3 "$DB" "$sql" 2>/dev/null | head -n 1 || true
+  fi
+}
+
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+
+now="$(date -Iseconds 2>/dev/null || date)"
+rid="$(tr -d '\r\n' < "$RID_FILE" 2>/dev/null || true)"
+license="$(tr -d '\r\n' < "$LICENSE_FILE" 2>/dev/null || true)"
+base="$(tr -d '\r\n' < "$BASE_FILE" 2>/dev/null || true)"
+apikey_present=false
+[ -s "$APIKEY_FILE" ] && apikey_present=true
+
+opennds_running=false
+pgrep opennds >/dev/null 2>&1 && opennds_running=true
+opennds_status=false
+ndsctl status >/dev/null 2>&1 && opennds_status=true
+uhttpd_running=false
+pgrep uhttpd >/dev/null 2>&1 && uhttpd_running=true
+
+sqlite_available=false
+command -v sqlite3 >/dev/null 2>&1 && sqlite_available=true
+sqlite_integrity="unavailable"
+if [ "$sqlite_available" = "true" ] && [ -s "$DB" ]; then
+  sqlite_integrity="$(sqlite3 "$DB" 'PRAGMA integrity_check;' 2>/dev/null | head -n 1 || printf 'error')"
+fi
+
+wan_ip="$(ubus call network.interface.wan status 2>/dev/null | sed -n 's/.*"address"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1 || true)"
+wan_up=false
+[ -n "$wan_ip" ] && wan_up=true
+internet_reachable=false
+ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1 && internet_reachable=true
+cloud_reachable=false
+if [ -n "$base" ] && command -v curl >/dev/null 2>&1; then
+  curl -fsS --connect-timeout 3 -m 5 "${base%/}/api/health" >/dev/null 2>&1 && cloud_reachable=true
+fi
+
+sessions_active="$(sqlite_count "SELECT count(1) FROM sessions WHERE status='active';")"
+sessions_paused="$(sqlite_count "SELECT count(1) FROM sessions WHERE status='paused';")"
+sessions_expired="$(sqlite_count "SELECT count(1) FROM sessions WHERE status='expired';")"
+vouchers_available="$(sqlite_count "SELECT count(1) FROM vouchers WHERE used=0 AND (expires_at IS NULL OR expires_at=0 OR expires_at > unixepoch());")"
+vouchers_used="$(sqlite_count "SELECT count(1) FROM vouchers WHERE used=1;")"
+queue_pending="$(sqlite_count "SELECT count(1) FROM sync_queue WHERE status='pending';")"
+queue_synced="$(sqlite_count "SELECT count(1) FROM sync_queue WHERE status='synced';")"
+queue_retry_total="$(sqlite_count "SELECT COALESCE(sum(retry_count),0) FROM sync_queue WHERE status='pending';")"
+sales_unsynced="$(sqlite_count "SELECT count(1) FROM sales_events WHERE synced=0;")"
+last_sale_ts="$(sqlite_string "SELECT datetime(timestamp, 'unixepoch') FROM sales_events ORDER BY timestamp DESC LIMIT 1;")"
+last_watchdog="$(tail -n 1 "$WATCHDOG_LOG" 2>/dev/null || true)"
+
+overall_ok=true
+[ "$opennds_running" = "true" ] || overall_ok=false
+[ "$uhttpd_running" = "true" ] || overall_ok=false
+[ "$sqlite_integrity" = "ok" ] || overall_ok=false
+
+printf '{'
+printf '"ok":%s,' "$overall_ok"
+printf '"local":true,'
+printf '"time":"%s",' "$(json_escape "$now")"
+printf '"router":{"id":"%s","licenseKey":"%s","apiKeyPresent":%s,"cloudBase":"%s"},' \
+  "$(json_escape "$rid")" "$(json_escape "$license")" "$apikey_present" "$(json_escape "$base")"
+printf '"services":{"openndsRunning":%s,"openndsStatus":%s,"uhttpdRunning":%s},' \
+  "$opennds_running" "$opennds_status" "$uhttpd_running"
+printf '"network":{"wanUp":%s,"wanIp":"%s","internetReachable":%s,"cloudReachable":%s},' \
+  "$wan_up" "$(json_escape "$wan_ip")" "$internet_reachable" "$cloud_reachable"
+printf '"sqlite":{"available":%s,"integrity":"%s","path":"%s"},' \
+  "$sqlite_available" "$(json_escape "$sqlite_integrity")" "$(json_escape "$DB")"
+printf '"counts":{"sessionsActive":%s,"sessionsPaused":%s,"sessionsExpired":%s,"vouchersAvailable":%s,"vouchersUsed":%s,"queuePending":%s,"queueSynced":%s,"queueRetryTotal":%s,"salesUnsynced":%s},' \
+  "$sessions_active" "$sessions_paused" "$sessions_expired" "$vouchers_available" "$vouchers_used" "$queue_pending" "$queue_synced" "$queue_retry_total" "$sales_unsynced"
+printf '"last":{"saleAt":"%s","watchdog":"%s"}' \
+  "$(json_escape "$last_sale_ts")" "$(json_escape "$last_watchdog")"
+printf '}\n'

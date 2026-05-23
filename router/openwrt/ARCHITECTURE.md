@@ -51,11 +51,16 @@ The stable v1 API paths are:
 /cgi-bin/icxifi/api/v1/session/pause
 /cgi-bin/icxifi/api/v1/session/resume
 /cgi-bin/icxifi/api/v1/heartbeat
+/cgi-bin/icxifi/api/v1/health
 /cgi-bin/icxifi/api/v1/sync/push
 /cgi-bin/icxifi/api/v1/router/config
 ```
 
 For compatibility, these initially wrap the proven CGI scripts. Later phases can move their internals directly to SQLite-backed modules without changing ESP or portal URLs.
+
+`/api/v1/heartbeat` is intentionally tiny for watchdog use. `/api/v1/health`
+is the richer diagnostic endpoint for service state, SQLite integrity, queue
+depth, voucher/session counts, WAN, and cloud reachability.
 
 ## SQLite
 

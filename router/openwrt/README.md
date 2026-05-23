@@ -21,7 +21,7 @@ This bundle provides:
 - `api/v1/coin` (versioned alias for ESP coin/local grant)
 - `api/v1/voucher/redeem` (versioned alias for voucher redeem)
 - `api/v1/session/status`, `pause`, `resume`
-- `api/v1/sync/push`, `heartbeat`, `router/config`
+- `api/v1/sync/push`, `heartbeat`, `health`, `router/config`
 
 ## Commercial local core
 
@@ -33,6 +33,7 @@ Phase A introduces the target local-first structure without removing the working
 - Queue helper: `/usr/lib/icxifi/queue/enqueue`
 - ESP HMAC secret helper: `/usr/lib/icxifi/config/esp-secret`
 - Watchdog runner: `/usr/lib/icxifi/watchdog/icxifi-watchdog.sh`
+- Diagnostics endpoint: `/cgi-bin/icxifi/api/v1/health`
 
 The installer attempts to install `sqlite3-cli`, initializes `/etc/icxifi/icxifi.db`, and schedules the queue worker every 2 minutes. If SQLite is not available, existing flat-file behavior continues.
 
@@ -60,6 +61,12 @@ Watchdog logs:
 
 ```text
 /usr/lib/icxifi/watchdog/logs/watchdog.log
+```
+
+Local diagnostics:
+
+```sh
+curl -s http://127.0.0.1:2080/cgi-bin/icxifi/api/v1/health
 ```
 
 ## ESP HMAC signing
