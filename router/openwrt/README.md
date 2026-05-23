@@ -31,8 +31,29 @@ Phase A introduces the target local-first structure without removing the working
 - SQLite init: `/usr/lib/icxifi/db/init`
 - Sync queue worker: `/usr/lib/icxifi/sync/queue_worker`
 - Queue helper: `/usr/lib/icxifi/queue/enqueue`
+- ESP HMAC secret helper: `/usr/lib/icxifi/config/esp-secret`
 
 The installer attempts to install `sqlite3-cli`, initializes `/etc/icxifi/icxifi.db`, and schedules the queue worker every 2 minutes. If SQLite is not available, existing flat-file behavior continues.
+
+## ESP HMAC signing
+
+Coin requests remain backward-compatible until a secret is configured. Once a secret exists, `/cgi-bin/icxifi/esp_vend` and `/api/v1/coin` require:
+
+- `ts`
+- `nonce`
+- `sig`
+
+Generate a per-device secret:
+
+```sh
+/usr/lib/icxifi/config/esp-secret vendo-1
+```
+
+The ESP signs:
+
+```text
+amount={amount}&clientIp={clientIp}&clientMac={clientMac}&deviceId={deviceId}&nonce={nonce}&ts={ts}
+```
 
 ## Quick deploy
 

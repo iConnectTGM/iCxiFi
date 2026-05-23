@@ -13,6 +13,9 @@ PENDING_FILE="/etc/icxifi/pending_sales.txt"
 BASE_FILE="/etc/icxifi/cloud_base_url"
 RID_FILE="/etc/icxifi/router_id"
 APIKEY_FILE="/etc/icxifi/router_api_key"
+ESP_SECRET_FILE="/etc/icxifi/esp_secret"
+ESP_SECRET_DIR="/etc/icxifi/esp_secrets"
+HMAC_WINDOW_SECONDS="${ICXIFI_HMAC_WINDOW_SECONDS:-300}"
 
 print_json() {
   printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n%s\n' "$1"
@@ -67,6 +70,10 @@ safe_code() {
   printf '%s' "$1" | grep -Eq '^(ICXF-)?[A-Z0-9]{4,32}$'
 }
 
+safe_sig() {
+  printf '%s' "$1" | grep -Eq '^[A-Fa-f0-9]{64}$'
+}
+
 json_get_string() {
   key="$1"
   json="$2"
@@ -106,6 +113,70 @@ rate_limit_check() {
     return 1
   fi
   return 0
+}
+
+esp_secret_for_device() {
+  dev="$1"
+  if safe_token "$dev" && [ -s "$ESP_SECRET_DIR/$dev" ]; then
+    tr -d '\r\n' < "$ESP_SECRET_DIR/$dev"
+    return 0
+  fi
+  if [ -s "$ESP_SECRET_FILE" ]; then
+    tr -d '\r\n' < "$ESP_SECRET_FILE"
+    return 0
+  fi
+  return 1
+}
+
+verify_esp_hmac() {
+  secret="$(esp_secret_for_device "$deviceId" 2>/dev/null || true)"
+  [ -n "$secret" ] || {
+    log_debug "esp_hmac_not_configured deviceId=$deviceId"
+    return 0
+  }
+
+  if ! command -v openssl >/dev/null 2>&1; then
+    log_debug "esp_hmac_tool_missing deviceId=$deviceId"
+    print_status_json 503 "Service Unavailable" '{"ok":false,"error":"Router HMAC verifier unavailable"}'
+    exit 0
+  fi
+
+  if [ -z "$sigTs" ] || ! is_uint "$sigTs" || [ -z "$sigNonce" ] || ! safe_token "$sigNonce" || [ -z "$sig" ] || ! safe_sig "$sig"; then
+    log_debug "esp_hmac_missing deviceId=$deviceId requestIp=$requestIp"
+    print_status_json 401 "Unauthorized" '{"ok":false,"error":"Missing or invalid signature"}'
+    exit 0
+  fi
+
+  now="$(date +%s)"
+  age=$((now - sigTs))
+  [ "$age" -lt 0 ] && age=$((0 - age))
+  if [ "$age" -gt "$HMAC_WINDOW_SECONDS" ]; then
+    log_debug "esp_hmac_expired deviceId=$deviceId ts=$sigTs age=$age"
+    print_status_json 401 "Unauthorized" '{"ok":false,"error":"Signature expired"}'
+    exit 0
+  fi
+
+  nonce_key="$(printf '%s_%s' "$deviceId" "$sigNonce" | tr -c 'A-Za-z0-9._-' '_')"
+  nonce_file="/tmp/icxifi_esp_nonce_${nonce_key}"
+  find /tmp -maxdepth 1 -name 'icxifi_esp_nonce_*' -mmin +10 -delete 2>/dev/null || true
+  if [ -e "$nonce_file" ]; then
+    log_debug "esp_hmac_replay deviceId=$deviceId nonce=$sigNonce"
+    print_status_json 409 "Conflict" '{"ok":false,"error":"Replay detected"}'
+    exit 0
+  fi
+
+  canonical="$(printf 'amount=%s&clientIp=%s&clientMac=%s&deviceId=%s&nonce=%s&ts=%s' \
+    "$amount" "$targetIp" "$targetMac" "$deviceId" "$sigNonce" "$sigTs")"
+  expected="$(printf '%s' "$canonical" | openssl dgst -sha256 -hmac "$secret" 2>/dev/null | awk '{print $NF}' | tr 'A-F' 'a-f')"
+  provided="$(printf '%s' "$sig" | tr 'A-F' 'a-f')"
+  if [ -z "$expected" ] || [ "$expected" != "$provided" ]; then
+    log_debug "esp_hmac_bad deviceId=$deviceId nonce=$sigNonce"
+    print_status_json 401 "Unauthorized" '{"ok":false,"error":"Bad signature"}'
+    exit 0
+  fi
+
+  : > "$nonce_file"
+  log_debug "esp_hmac_ok deviceId=$deviceId nonce=$sigNonce"
 }
 
 profile_rate_field() {
@@ -274,6 +345,9 @@ amount=""
 deviceId="vendo-1"
 targetIp=""
 targetMac=""
+sigTs=""
+sigNonce=""
+sig=""
 
 IFS='&'
 for pair in ${QUERY_STRING:-}; do
@@ -286,6 +360,9 @@ for pair in ${QUERY_STRING:-}; do
     deviceId) deviceId="$val" ;;
     clientIp|clientip|ip) targetIp="$val" ;;
     clientMac|clientmac|macHint|mac) targetMac="$val" ;;
+    ts|timestamp) sigTs="$val" ;;
+    nonce) sigNonce="$val" ;;
+    sig|signature) sig="$val" ;;
   esac
 done
 unset IFS
@@ -308,6 +385,8 @@ if [ -n "$targetMac" ] && ! safe_mac "$targetMac"; then
   print_status_json 400 "Bad Request" '{"ok":false,"error":"Invalid clientMac"}'
   exit 0
 fi
+
+verify_esp_hmac
 
 retry_after=""
 if ! retry_after="$(rate_limit_check "$requestIp")"; then

@@ -110,6 +110,19 @@ Phase B:
 - router watchdog
 - retry and reconciliation hardening
 
+ESP HMAC is enforced per device when either of these files exists:
+
+```text
+/etc/icxifi/esp_secret
+/etc/icxifi/esp_secrets/{deviceId}
+```
+
+Create one with:
+
+```sh
+/usr/lib/icxifi/config/esp-secret vendo-1
+```
+
 Phase C:
 
 - signed OTA update flow

@@ -96,13 +96,50 @@ Router behavior:
 9. If temporary failure, retry.
 10. If permanent failure, mark failed and show error.
 
-## Future Security
+## ESP Request Signing
 
-Phase B should add ESP-to-router request signing:
+Routers may enforce HMAC signing when `/etc/icxifi/esp_secret` or `/etc/icxifi/esp_secrets/{deviceId}` exists.
 
-- HMAC SHA256
-- timestamp
-- nonce
-- per-device secret
+Add these query params to `/api/v1/coin`:
 
-The router should reject replayed or expired requests.
+- `ts`: Unix epoch seconds
+- `nonce`: unique token per request, `A-Za-z0-9._:-`
+- `sig`: lowercase hex HMAC SHA256
+
+Canonical message:
+
+```text
+amount={amount}&clientIp={clientIp}&clientMac={clientMac}&deviceId={deviceId}&nonce={nonce}&ts={ts}
+```
+
+Empty optional values are included as empty strings. Example when no client MAC is known:
+
+```text
+amount=5&clientIp=10.0.0.178&clientMac=&deviceId=vendo-1&nonce=abc123&ts=1779430000
+```
+
+Signature:
+
+```text
+hex(HMAC_SHA256(secret, canonical_message))
+```
+
+Signed example:
+
+```http
+GET /cgi-bin/icxifi/api/v1/coin?amount=5&deviceId=vendo-1&clientIp=10.0.0.178&ts=1779430000&nonce=abc123&sig=...
+```
+
+Router rules:
+
+- Reject bad or missing signatures when a secret is configured.
+- Reject timestamps outside the allowed window, default 300 seconds.
+- Reject replayed nonce values.
+
+Generate a router-side secret:
+
+```sh
+/usr/lib/icxifi/config/esp-secret vendo-1
+```
+
+The first output line is the router secret file path. The second line is the hex secret to flash into that ESP.
