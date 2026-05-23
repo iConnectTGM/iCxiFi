@@ -19,6 +19,8 @@ Current migration state:
 - Successful coin/voucher grants write sales and sessions into SQLite. Sales are
   queued in SQLite `sync_queue`; the old flat-file queue is only a fallback when
   SQLite is unavailable.
+- Sales include `localEventId` for cloud de-duplication, and queue rows use
+  `next_attempt_at` to back off failed sync attempts.
 - Session status, pause, resume, and expiry now prefer SQLite `sessions`, with
   `/tmp/icxifi_sessions` and `/tmp/icxifi_paused` kept as compatibility fallback.
 - Voucher inventory and local voucher redemption now prefer SQLite `vouchers`,

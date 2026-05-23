@@ -48,6 +48,8 @@ Active coin and voucher flows now mirror successful local events into SQLite:
 New local events are queued in SQLite `sync_queue` for background cloud sync. Legacy
 `/etc/icxifi/pending_sales.txt` remains as a fallback when SQLite is unavailable and
 for draining entries created by older builds.
+Sales carry a stable `localEventId` so cloud sync can de-duplicate retries.
+Failed queue rows use retry backoff through `next_attempt_at`.
 
 The installer also schedules the watchdog every minute:
 

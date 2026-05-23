@@ -486,24 +486,47 @@ r.post('/sales/sync', routerAuth, async (req, res) => {
     }
 
     const created = [];
+    let duplicateCount = 0;
     for (const it of items) {
       const amount = Number(it.amount);
       if (!Number.isFinite(amount) || amount <= 0) continue;
 
       const ts = it.ts ? new Date(it.ts) : new Date();
       if (Number.isNaN(ts.getTime())) continue;
+      const localEventId = it.localEventId ? String(it.localEventId).trim() : null;
+      if (localEventId) {
+        const existing = await SaleEvent.findOne({ routerId, localEventId }).select('_id').lean();
+        if (existing) {
+          duplicateCount += 1;
+          continue;
+        }
+      }
 
-      await SaleEvent.create({
+      const saleDoc = {
         routerId,
         deviceId: it.deviceId ? String(it.deviceId) : null,
         amount,
         voucherCode: it.voucherCode ? String(it.voucherCode) : null,
+        localEventId,
         ts
-      });
+      };
+      if (localEventId) {
+        try {
+          await SaleEvent.create(saleDoc);
+        } catch (error) {
+          if (error && error.code === 11000) {
+            duplicateCount += 1;
+            continue;
+          }
+          throw error;
+        }
+      } else {
+        await SaleEvent.create(saleDoc);
+      }
       created.push({ voucherCode: it.voucherCode, amount, ts });
     }
 
-    return res.json({ ok: true, synced: created.length });
+    return res.json({ ok: true, synced: created.length, duplicates: duplicateCount });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'Server error' });
   }

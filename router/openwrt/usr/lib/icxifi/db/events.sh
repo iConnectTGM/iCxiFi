@@ -14,6 +14,10 @@ icxifi_db_ready() {
     mkdir -p "$(dirname "$ICXIFI_DB")"
     sqlite3 "$ICXIFI_DB" < "$ICXIFI_SCHEMA" >/dev/null 2>&1 || return 1
   }
+  sqlite3 "$ICXIFI_DB" "ALTER TABLE sales_events ADD COLUMN local_event_id TEXT;" >/dev/null 2>&1 || true
+  sqlite3 "$ICXIFI_DB" "ALTER TABLE sync_queue ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0;" >/dev/null 2>&1 || true
+  sqlite3 "$ICXIFI_DB" "CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_events_local_event ON sales_events(local_event_id) WHERE local_event_id IS NOT NULL;" >/dev/null 2>&1 || true
+  sqlite3 "$ICXIFI_DB" "CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, next_attempt_at, created_at);" >/dev/null 2>&1 || true
   return 0
 }
 
@@ -64,15 +68,26 @@ icxifi_record_sale() {
   mac_sql="$(icxifi_sql_escape "$client_mac")"
   ip_sql="$(icxifi_sql_escape "$client_ip")"
   ts="$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%SZ')"
+  local_event_id="$(printf '%s|%s|%s|%s|%s|%s' "$source" "$amount" "$device_id" "$voucher_code" "$client_mac" "$client_ip" | openssl dgst -sha256 2>/dev/null | awk '{print $NF}')"
+  if [ -z "$local_event_id" ]; then
+    local_event_id="$(printf '%s-%s-%s-%s' "$source" "$amount" "$voucher_code" "$(icxifi_now_epoch)" | tr -c 'A-Za-z0-9._-' '_')"
+  fi
+  event_sql="$(icxifi_sql_escape "$local_event_id")"
 
-  sale_id="$(sqlite3 "$ICXIFI_DB" "INSERT INTO sales_events(source, amount, device_id, voucher_code, client_mac, client_ip, timestamp, synced)
-    VALUES('$source_sql', $amount, '$device_sql', '$voucher_sql', '$mac_sql', '$ip_sql', unixepoch(), $synced);
-    SELECT last_insert_rowid();" 2>/dev/null)" || return 1
+  sqlite3 "$ICXIFI_DB" "INSERT OR IGNORE INTO sales_events(source, amount, device_id, voucher_code, client_mac, client_ip, local_event_id, timestamp, synced)
+    VALUES('$source_sql', $amount, '$device_sql', '$voucher_sql', '$mac_sql', '$ip_sql', '$event_sql', unixepoch(), $synced);" 2>/dev/null || return 1
+  sale_id="$(sqlite3 "$ICXIFI_DB" "SELECT id FROM sales_events WHERE local_event_id='$event_sql' LIMIT 1;" 2>/dev/null || true)"
+  [ -n "$sale_id" ] || return 1
 
   [ "$synced" = "0" ] || return 0
 
-  payload="$(printf '{"localSaleId":%s,"items":[{"deviceId":"%s","amount":%s,"voucherCode":"%s","ts":"%s","source":"%s","clientMac":"%s","clientIp":"%s"}]}' \
+  existing_queue="$(sqlite3 "$ICXIFI_DB" "SELECT id FROM sync_queue WHERE status='pending' AND payload LIKE '%\"localEventId\":\"$event_sql\"%' LIMIT 1;" 2>/dev/null || true)"
+  [ -n "$existing_queue" ] && return 0
+
+  payload="$(printf '{"localSaleId":%s,"localEventId":"%s","items":[{"localEventId":"%s","deviceId":"%s","amount":%s,"voucherCode":"%s","ts":"%s","source":"%s","clientMac":"%s","clientIp":"%s"}]}' \
     "${sale_id:-0}" \
+    "$(icxifi_json_escape "$local_event_id")" \
+    "$(icxifi_json_escape "$local_event_id")" \
     "$(icxifi_json_escape "$device_id")" \
     "$amount" \
     "$(icxifi_json_escape "$voucher_code")" \

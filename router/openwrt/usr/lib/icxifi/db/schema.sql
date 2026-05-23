@@ -57,11 +57,13 @@ CREATE TABLE IF NOT EXISTS sales_events (
   voucher_code TEXT,
   client_mac TEXT,
   client_ip TEXT,
+  local_event_id TEXT,
   timestamp INTEGER NOT NULL DEFAULT (unixepoch()),
   synced INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_sales_events_synced ON sales_events(synced, timestamp);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_events_local_event ON sales_events(local_event_id) WHERE local_event_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS sync_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,8 +71,9 @@ CREATE TABLE IF NOT EXISTS sync_queue (
   payload TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
   retry_count INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, next_attempt_at, created_at);
