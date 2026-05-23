@@ -19,6 +19,8 @@ Current migration state:
 - Successful coin/voucher grants write sales and sessions into SQLite. Sales are
   queued in SQLite `sync_queue`; the old flat-file queue is only a fallback when
   SQLite is unavailable.
+- Session status, pause, resume, and expiry now prefer SQLite `sessions`, with
+  `/tmp/icxifi_sessions` and `/tmp/icxifi_paused` kept as compatibility fallback.
 
 Target runtime paths:
 
@@ -84,6 +86,7 @@ The sync queue worker runs every 2 minutes:
 
 ```text
 */2 * * * * /usr/lib/icxifi/sync/queue_worker
+*/5 * * * * /usr/lib/icxifi/sessions/cleanup
 ```
 
 Legacy `/etc/icxifi/pending_sales.txt` remains supported through `/usr/bin/icxifi-sync-pending`

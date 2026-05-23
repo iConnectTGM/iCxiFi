@@ -41,6 +41,7 @@ Active coin and voucher flows now mirror successful local events into SQLite:
 - coin/voucher sales -> `sales_events`
 - granted access -> `sessions`
 - used local vouchers -> `vouchers.used=1`
+- pause/resume/status state -> SQLite `sessions` first, temp files as fallback
 
 New local events are queued in SQLite `sync_queue` for background cloud sync. Legacy
 `/etc/icxifi/pending_sales.txt` remains as a fallback when SQLite is unavailable and
@@ -50,6 +51,7 @@ The installer also schedules the watchdog every minute:
 
 ```text
 * * * * * /usr/lib/icxifi/watchdog/icxifi-watchdog.sh
+*/5 * * * * /usr/lib/icxifi/sessions/cleanup
 ```
 
 Watchdog logs:

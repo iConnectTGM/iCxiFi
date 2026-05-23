@@ -7,6 +7,8 @@ BASE_FILE="/etc/icxifi/cloud_base_url"
 RID_FILE="/etc/icxifi/router_id"
 APIKEY_FILE="/etc/icxifi/router_api_key"
 
+[ -r /usr/lib/icxifi/sessions/state.sh ] && . /usr/lib/icxifi/sessions/state.sh
+
 printf 'Content-Type: application/json\r\n'
 printf 'Cache-Control: no-store\r\n\r\n'
 
@@ -77,6 +79,9 @@ if [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ]; then
           "$now" "$minutes_for_auth" "$dl_kbps" "$ul_kbps" "${clientMac:-}" "${clientIp:-}" \
           > "$SESS_DIR/${sess_key}" 2>/dev/null || true
       fi
+      if command -v icxifi_session_resume >/dev/null 2>&1; then
+        icxifi_session_resume "$clientMac" "$clientIp" "$remaining" "$dl_kbps" "$ul_kbps" || true
+      fi
 
       printf '{"ok":true,"connected":true,"minutesLeft":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s}\n' \
         "$((remaining / 60))" "$remaining" "$dl_kbps" "$ul_kbps"
@@ -108,6 +113,46 @@ fi
 
 # If no paused file, check stored sessions (disconnected-with-time resume)
 if [ -z "$PAUSED_FILE" ] || ! [ -s "$PAUSED_FILE" ]; then
+  if command -v icxifi_session_select >/dev/null 2>&1; then
+    sqlite_paused="$(icxifi_session_select "$clientMac" "$clientIp" "'paused'" | head -n 1 || true)"
+    if [ -n "$sqlite_paused" ]; then
+      IFS='|' read -r sid s_mac s_ip s_start s_end remaining s_status s_speed s_voucher s_source <<EOF_ROW
+$sqlite_paused
+EOF_ROW
+      unset IFS
+      dl_kbps="$(printf '%s' "$s_speed" | sed -n 's/.*"downloadKbps"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+      ul_kbps="$(printf '%s' "$s_speed" | sed -n 's/.*"uploadKbps"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+      remaining="${remaining:-0}"
+      dl_kbps="${dl_kbps:-10000}"
+      ul_kbps="${ul_kbps:-10000}"
+      minutes_for_auth=$(( (remaining + 59) / 60 ))
+      [ "$minutes_for_auth" -lt 1 ] && minutes_for_auth=1
+      auth_ok=0
+      if [ -n "$clientIp" ] && ndsctl auth "$clientIp" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume|sqlite" >/dev/null 2>&1; then
+        auth_ok=1
+      elif [ -n "$s_mac" ] && ndsctl auth "$s_mac" >/dev/null 2>&1; then
+        auth_ok=1
+      fi
+      if [ "$auth_ok" = "1" ]; then
+        icxifi_session_resume "${s_mac:-$clientMac}" "${clientIp:-$s_ip}" "$remaining" "$dl_kbps" "$ul_kbps" || true
+        SESS_DIR="/tmp/icxifi_sessions"
+        mkdir -p "$SESS_DIR"
+        now="$(date +%s)"
+        if [ -n "${s_mac:-$clientMac}" ]; then
+          sess_key="$(echo "${s_mac:-$clientMac}" | tr -d ':-' | tr 'a-z' 'A-Z')"
+        else
+          sess_key="ip_$(echo "${clientIp:-$s_ip}" | tr -c 'A-Za-z0-9' '_')"
+        fi
+        printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
+          "$now" "$minutes_for_auth" "$dl_kbps" "$ul_kbps" "${s_mac:-$clientMac}" "${clientIp:-$s_ip}" \
+          > "$SESS_DIR/${sess_key}" 2>/dev/null || true
+        printf '{"ok":true,"connected":true,"minutesLeft":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s}\n' \
+          "$((remaining / 60))" "$remaining" "$dl_kbps" "$ul_kbps"
+        exit 0
+      fi
+    fi
+  fi
+
   SESS_DIR="/tmp/icxifi_sessions"
   SESS_FILE=""
   if [ -n "$clientMac" ]; then
@@ -153,6 +198,9 @@ if [ -z "$PAUSED_FILE" ] || ! [ -s "$PAUSED_FILE" ]; then
         printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
           "$now" "$mins_for_auth" "$dl_kbps" "$ul_kbps" "${client_mac_s:-}" "$client_ip_s" \
           > "$SESS_DIR/${sk}" 2>/dev/null || true
+      fi
+      if command -v icxifi_session_resume >/dev/null 2>&1; then
+        icxifi_session_resume "${client_mac_s:-$clientMac}" "$client_ip_s" "$remaining_secs" "$dl_kbps" "$ul_kbps" || true
       fi
       printf '{"ok":true,"connected":true,"minutesLeft":%s,"remainingSeconds":%s,"downloadKbps":%s,"uploadKbps":%s}\n' \
         "$((remaining_secs / 60))" "$remaining_secs" "$dl_kbps" "$ul_kbps"
@@ -204,6 +252,9 @@ if [ -n "$sess_key" ]; then
   printf '{"grantedAt":%s,"minutesGranted":%s,"downloadKbps":%s,"uploadKbps":%s,"clientMac":"%s","clientIp":"%s"}' \
     "$now" "$minutes_for_auth" "$dl_kbps" "$ul_kbps" "${client_mac:-}" "$client_ip" \
     > "$SESS_DIR/${sess_key}" 2>/dev/null || true
+fi
+if command -v icxifi_session_resume >/dev/null 2>&1; then
+  icxifi_session_resume "${client_mac:-$clientMac}" "$client_ip" "$remaining" "$dl_kbps" "$ul_kbps" || true
 fi
 
 rm -f "$PAUSED_FILE"

@@ -6,6 +6,8 @@ BASE_FILE="/etc/icxifi/cloud_base_url"
 RID_FILE="/etc/icxifi/router_id"
 APIKEY_FILE="/etc/icxifi/router_api_key"
 
+[ -r /usr/lib/icxifi/sessions/state.sh ] && . /usr/lib/icxifi/sessions/state.sh
+
 printf 'Content-Type: application/json; charset=utf-8\r\n'
 printf 'Cache-Control: no-store\r\n\r\n'
 
@@ -41,6 +43,14 @@ resolve_mac_from_arp() {
 if [ -z "$clientIp" ]; then
   printf '{"ok":true,"connected":false}\n'
   exit 0
+fi
+
+if command -v icxifi_session_select >/dev/null 2>&1; then
+  sqlite_paused="$(icxifi_session_select "$clientMac" "$clientIp" "'paused'" | head -n 1 || true)"
+  if [ -n "$sqlite_paused" ]; then
+    icxifi_session_json_from_row "$sqlite_paused" "false" "0"
+    exit 0
+  fi
 fi
 
 if [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ]; then
@@ -82,6 +92,14 @@ if [ -z "$nds_json" ]; then
 fi
 
 if [ -z "$nds_json" ] || ! echo "$nds_json" | grep -q '"state".*"Authenticated"'; then
+  if command -v icxifi_session_select >/dev/null 2>&1; then
+    sqlite_active="$(icxifi_session_select "$clientMac" "$clientIp" "'active'" | head -n 1 || true)"
+    if [ -n "$sqlite_active" ]; then
+      icxifi_session_json_from_row "$sqlite_active" "false" "1"
+      exit 0
+    fi
+  fi
+
   # ndsctl json can briefly return "thread is busy" while status still knows the
   # client is authenticated. Use ndsctl status as a fallback so the portal keeps
   # a live countdown instead of freezing as disconnected-with-time.
@@ -223,6 +241,14 @@ if [ -z "$nds_json" ] || ! echo "$nds_json" | grep -q '"state".*"Authenticated"'
   [ -n "$clientMac" ] && mac_extra=",\"clientMac\":\"$clientMac\""
   printf '{"ok":true,"connected":false,"clientIp":"%s"%s}\n' "$clientIp" "$mac_extra"
   exit 0
+fi
+
+if command -v icxifi_session_select >/dev/null 2>&1; then
+  sqlite_active="$(icxifi_session_select "$clientMac" "$clientIp" "'active'" | head -n 1 || true)"
+  if [ -n "$sqlite_active" ]; then
+    icxifi_session_json_from_row "$sqlite_active" "true" "0"
+    exit 0
+  fi
 fi
 
 session_end="$(echo "$nds_json" | sed -n 's/.*"session_end"[^"]*"\([0-9]*\)".*/\1/p' | head -1)"

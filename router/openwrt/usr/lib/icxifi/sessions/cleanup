@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+[ -r /usr/lib/icxifi/sessions/state.sh ] && . /usr/lib/icxifi/sessions/state.sh
+
+if command -v icxifi_session_expire_old >/dev/null 2>&1; then
+  icxifi_session_expire_old || true
+fi
+
+# Keep old temp-file fallback from growing forever.
+now="$(date +%s 2>/dev/null || printf '0')"
+for dir in /tmp/icxifi_sessions /tmp/icxifi_paused; do
+  [ -d "$dir" ] || continue
+  find "$dir" -type f -mmin +1440 -delete 2>/dev/null || true
+done
+
+exit 0

@@ -82,7 +82,7 @@ if [ -d "$SRC_ROOT/usr/lib/icxifi" ]; then
   mkdir -p "$CORE_DIR"
   cp -R "$SRC_ROOT/usr/lib/icxifi/." "$CORE_DIR/" 2>/dev/null || true
   chmod -R a+rX "$CORE_DIR" 2>/dev/null || true
-  find "$CORE_DIR" -type f \( -name init -o -name enqueue -o -name queue_worker -o -name '*.sh' \) -exec chmod +x {} \; 2>/dev/null || true
+  find "$CORE_DIR" -type f \( -name init -o -name enqueue -o -name queue_worker -o -name cleanup -o -name '*.sh' \) -exec chmod +x {} \; 2>/dev/null || true
   mkdir -p "$CORE_DIR/watchdog/logs" "$CORE_DIR/watchdog/state"
 fi
 
@@ -128,6 +128,8 @@ grep -q 'icxifi/sync/queue_worker' /etc/crontabs/root 2>/dev/null || \
   echo '*/2 * * * * /usr/lib/icxifi/sync/queue_worker' >> /etc/crontabs/root
 grep -q 'icxifi/watchdog/icxifi-watchdog.sh' /etc/crontabs/root 2>/dev/null || \
   echo '* * * * * /usr/lib/icxifi/watchdog/icxifi-watchdog.sh' >> /etc/crontabs/root
+grep -q 'icxifi/sessions/cleanup' /etc/crontabs/root 2>/dev/null || \
+  echo '*/5 * * * * /usr/lib/icxifi/sessions/cleanup' >> /etc/crontabs/root
 
 # Cron: heartbeat every 2 min (updates lastSeenAt for Admin UI Online status)
 # Cron: pull-config every 5 min (sync license, profile, commands)
