@@ -28,6 +28,8 @@ static const unsigned long PROFILE_POLL_MS = 600000;
 static const unsigned long RECONNECT_INTERVAL_MS = 20000;
 static const unsigned long TIME_SYNC_POLL_MS = 3600000;
 static const uint16_t MAX_PENDING_AMOUNT = 500;
+static const bool SETUP_AP_ALWAYS_ON = true;
+static const char *SETUP_AP_SSID = "iCxiFi Setup";
 // Default hidden management WLAN for ESP fleet (override per device in UI if needed)
 static const char *DEFAULT_MGMT_SSID = "iCxiFi-MGMT";
 static const char *DEFAULT_MGMT_PASS = "icxifi12345";
@@ -54,6 +56,7 @@ static ESP8266WebServer server(80);
 static DNSServer dnsServer;
 
 static bool portalActive = false;
+static bool setupApStarted = false;
 static bool wifiConnected = false;
 static bool staServerStarted = false;
 static bool coinEnabled = false;
@@ -633,21 +636,27 @@ static void registerServerHandlers() {
 static void startPortal() {
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(AP_IP, AP_GW, AP_MASK);
-  WiFi.softAP("iCxiFI Setup");
+  WiFi.softAP(SETUP_AP_SSID);
   dnsServer.start(53, "*", WiFi.softAPIP());
-  registerServerHandlers();
-  server.begin();
+  if (!setupApStarted && !staServerStarted) {
+    registerServerHandlers();
+    server.begin();
+  }
+  setupApStarted = true;
   portalActive = true;
 }
 
 static void startStaServer() {
-  if (portalActive) {
+  if (portalActive && !SETUP_AP_ALWAYS_ON) {
     dnsServer.stop();
     portalActive = false;
+    setupApStarted = false;
     WiFi.softAPdisconnect(true);
   }
-  registerServerHandlers();
-  server.begin();
+  if (!staServerStarted) {
+    registerServerHandlers();
+    server.begin();
+  }
 }
 
 static void connectWifi() {
@@ -659,7 +668,7 @@ static void connectWifi() {
     primaryPass = DEFAULT_MGMT_PASS;
   }
 
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(SETUP_AP_ALWAYS_ON ? WIFI_AP_STA : WIFI_STA);
   WiFi.persistent(false);
 #ifdef WIFI_NONE_SLEEP
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
@@ -1008,6 +1017,10 @@ void setup() {
   pinMode(cfg.coinSetPin, OUTPUT);
   setCoinAcceptorEnabled(false);
 
+  if (SETUP_AP_ALWAYS_ON) {
+    startPortal();
+  }
+
   connectWifi();
   if (wifiConnected) {
     startStaServer();
@@ -1053,7 +1066,7 @@ void loop() {
         rSsid = DEFAULT_MGMT_SSID;
         rPass = DEFAULT_MGMT_PASS;
       }
-      WiFi.mode(WIFI_STA);
+    WiFi.mode(SETUP_AP_ALWAYS_ON ? WIFI_AP_STA : WIFI_STA);
       WiFi.persistent(false);
 #ifdef WIFI_NONE_SLEEP
       WiFi.setSleepMode(WIFI_NONE_SLEEP);
