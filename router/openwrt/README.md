@@ -32,8 +32,21 @@ Phase A introduces the target local-first structure without removing the working
 - Sync queue worker: `/usr/lib/icxifi/sync/queue_worker`
 - Queue helper: `/usr/lib/icxifi/queue/enqueue`
 - ESP HMAC secret helper: `/usr/lib/icxifi/config/esp-secret`
+- Watchdog runner: `/usr/lib/icxifi/watchdog/icxifi-watchdog.sh`
 
 The installer attempts to install `sqlite3-cli`, initializes `/etc/icxifi/icxifi.db`, and schedules the queue worker every 2 minutes. If SQLite is not available, existing flat-file behavior continues.
+
+The installer also schedules the watchdog every minute:
+
+```text
+* * * * * /usr/lib/icxifi/watchdog/icxifi-watchdog.sh
+```
+
+Watchdog logs:
+
+```text
+/usr/lib/icxifi/watchdog/logs/watchdog.log
+```
 
 ## ESP HMAC signing
 

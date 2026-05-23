@@ -110,6 +110,23 @@ Phase B:
 - router watchdog
 - retry and reconciliation hardening
 
+Watchdog layout:
+
+```text
+/usr/lib/icxifi/watchdog/
+├── icxifi-watchdog.sh
+├── checks/
+│   ├── check-opennds.sh
+│   ├── check-uhttpd.sh
+│   ├── check-sqlite.sh
+│   ├── check-wan.sh
+│   └── check-api.sh
+├── logs/
+└── state/
+```
+
+It runs once per minute, restarts failed services first, and only reboots on repeated critical failures.
+
 ESP HMAC is enforced per device when either of these files exists:
 
 ```text
