@@ -7,8 +7,10 @@ Target runtime:
 This bundle provides:
 - Captive portal UI at `/etc/opennds/htdocs/opennds_preauth/icxifi/`
 - Router CGI endpoints at `/www/cgi-bin/icxifi/`
+- Commercial core skeleton at `/usr/lib/icxifi/` for SQLite, local API, sync queue, and future watchdog/OTA modules
 - Installer: `/usr/bin/icxifi-opennds-install`
 - Hardening runbook: `HARDENING.md`
+- Architecture notes: `ARCHITECTURE.md`
 
 ## Included CGI endpoints
 
@@ -16,6 +18,21 @@ This bundle provides:
 - `redeem` (manual voucher redeem)
 - `profile` (profile cache passthrough + safe fallback)
 - `esp_vend` (ESP/device flow, create only, no redeem)
+- `api/v1/coin` (versioned alias for ESP coin/local grant)
+- `api/v1/voucher/redeem` (versioned alias for voucher redeem)
+- `api/v1/session/status`, `pause`, `resume`
+- `api/v1/sync/push`, `heartbeat`, `router/config`
+
+## Commercial local core
+
+Phase A introduces the target local-first structure without removing the working CGI endpoints:
+
+- SQLite schema: `/usr/lib/icxifi/db/schema.sql`
+- SQLite init: `/usr/lib/icxifi/db/init`
+- Sync queue worker: `/usr/lib/icxifi/sync/queue_worker`
+- Queue helper: `/usr/lib/icxifi/queue/enqueue`
+
+The installer attempts to install `sqlite3-cli`, initializes `/etc/icxifi/icxifi.db`, and schedules the queue worker every 2 minutes. If SQLite is not available, existing flat-file behavior continues.
 
 ## Quick deploy
 

@@ -1,0 +1,6 @@
+#!/bin/sh
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+if [ -x /usr/lib/icxifi/sync/queue_worker ]; then
+  /usr/lib/icxifi/sync/queue_worker >/dev/null 2>&1 || true
+fi
+printf '{"ok":true}\n'

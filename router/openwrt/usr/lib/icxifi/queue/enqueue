@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+. /usr/lib/icxifi/db/core.sh
+
+type="${1:-}"
+payload="${2:-}"
+
+if [ -z "$type" ] || [ -z "$payload" ]; then
+  echo "usage: icxifi queue/enqueue <type> <json-payload>" >&2
+  exit 2
+fi
+
+if icxifi_db_available && icxifi_db_init 2>/dev/null; then
+  type_sql="$(icxifi_sql_escape "$type")"
+  payload_sql="$(icxifi_sql_escape "$payload")"
+  sqlite3 "$ICXIFI_DB" "INSERT INTO sync_queue(type, payload, status, created_at, updated_at)
+    VALUES('$type_sql', '$payload_sql', 'pending', unixepoch(), unixepoch());"
+  exit 0
+fi
+
+mkdir -p /etc/icxifi
+printf '%s|%s|%s\n' "$type" "$payload" "$(date -Iseconds 2>/dev/null || date)" >> /etc/icxifi/sync_queue.txt

@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+. /usr/lib/icxifi/db/core.sh
+
+if ! icxifi_db_available; then
+  echo "sqlite3 is not installed" >&2
+  exit 127
+fi
+
+icxifi_db_init
+
+router_id="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+license_key="$(tr -d '\r\n' < /etc/icxifi/license_key 2>/dev/null || true)"
+
+if [ -n "$router_id" ]; then
+  rid="$(icxifi_sql_escape "$router_id")"
+  lic="$(icxifi_sql_escape "$license_key")"
+  sqlite3 "$ICXIFI_DB" "INSERT INTO routers(router_id, license_key, status, last_seen)
+    VALUES('$rid', '$lic', 'active', unixepoch())
+    ON CONFLICT(router_id) DO UPDATE SET
+      license_key=excluded.license_key,
+      last_seen=excluded.last_seen;"
+fi
+
+if [ -s /etc/icxifi/voucher_pool.txt ]; then
+  while IFS='|' read -r code minutes amount expires_at; do
+    [ -n "$code" ] || continue
+    code_sql="$(icxifi_sql_escape "$code")"
+    minutes="${minutes:-0}"
+    amount="${amount:-0}"
+    case "$minutes" in ''|*[!0-9]*) minutes=0 ;; esac
+    case "$amount" in ''|*[!0-9]*) amount=0 ;; esac
+    sqlite3 "$ICXIFI_DB" "INSERT OR IGNORE INTO vouchers(code, minutes, amount, created_at, synced)
+      VALUES('$code_sql', $minutes, $amount, unixepoch(), 1);"
+  done < /etc/icxifi/voucher_pool.txt
+fi
+
+echo "iCxiFi SQLite initialized: $ICXIFI_DB"

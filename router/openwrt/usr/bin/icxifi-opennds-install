@@ -26,8 +26,9 @@ SRC_ROOT="$(choose_src_root)"
 PORTAL_DIR="/etc/opennds/htdocs/opennds_preauth/icxifi"
 PORTAL_LEGACY_DIR="/etc/opennds/htdocs/icxifi"
 CGI_DIR="/www/cgi-bin/icxifi"
+CORE_DIR="/usr/lib/icxifi"
 
-mkdir -p "$PORTAL_DIR" "$PORTAL_LEGACY_DIR" "$CGI_DIR" /etc/icxifi
+mkdir -p "$PORTAL_DIR" "$PORTAL_LEGACY_DIR" "$CGI_DIR" "$CORE_DIR" /etc/icxifi
 
 copy_file() {
   src="$1"
@@ -76,6 +77,30 @@ copy_file "$SRC_ROOT/www/cgi-bin/icxifi/session" "$CGI_DIR/session" 0755 || true
 copy_file "$SRC_ROOT/www/cgi-bin/icxifi/pause" "$CGI_DIR/pause" 0755 || true
 copy_file "$SRC_ROOT/www/cgi-bin/icxifi/resume" "$CGI_DIR/resume" 0755 || true
 
+# Commercial core layout: SQLite/local API/sync queue lives under /usr/lib/icxifi.
+if [ -d "$SRC_ROOT/usr/lib/icxifi" ]; then
+  mkdir -p "$CORE_DIR"
+  cp -R "$SRC_ROOT/usr/lib/icxifi/." "$CORE_DIR/" 2>/dev/null || true
+  chmod -R a+rX "$CORE_DIR" 2>/dev/null || true
+  find "$CORE_DIR" -type f \( -name init -o -name enqueue -o -name queue_worker -o -name '*.sh' \) -exec chmod +x {} \; 2>/dev/null || true
+fi
+
+# Versioned local API aliases. Existing endpoints remain for backward compatibility.
+if [ -d "$SRC_ROOT/www/cgi-bin/icxifi/api" ]; then
+  mkdir -p "$CGI_DIR/api"
+  cp -R "$SRC_ROOT/www/cgi-bin/icxifi/api/." "$CGI_DIR/api/" 2>/dev/null || true
+  find "$CGI_DIR/api" -type f -exec chmod +x {} \; 2>/dev/null || true
+fi
+
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  opkg update >/dev/null 2>&1 || true
+  opkg install sqlite3-cli >/dev/null 2>&1 || true
+fi
+
+if [ -x /usr/lib/icxifi/db/init ]; then
+  /usr/lib/icxifi/db/init >/dev/null 2>&1 || true
+fi
+
 # Phase 3: config apply script (skip cp if src and dst are same file)
 if [ -f "$SRC_ROOT/usr/bin/icxifi-apply-config" ]; then
   if ! [ "$SRC_ROOT/usr/bin/icxifi-apply-config" -ef /usr/bin/icxifi-apply-config ]; then
@@ -92,6 +117,10 @@ for script in icxifi-replenish-pool icxifi-sync-pending icxifi-heartbeat icxifi-
     chmod +x "/usr/bin/$script"
   fi
 done
+
+mkdir -p /etc/crontabs
+grep -q 'icxifi/sync/queue_worker' /etc/crontabs/root 2>/dev/null || \
+  echo '*/2 * * * * /usr/lib/icxifi/sync/queue_worker' >> /etc/crontabs/root
 
 # Cron: heartbeat every 2 min (updates lastSeenAt for Admin UI Online status)
 # Cron: pull-config every 5 min (sync license, profile, commands)

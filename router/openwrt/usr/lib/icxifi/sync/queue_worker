@@ -1,0 +1,42 @@
+#!/bin/sh
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+. /usr/lib/icxifi/db/core.sh
+
+BASE="$(tr -d '\r\n' < /etc/icxifi/cloud_base_url 2>/dev/null || true)"
+RID="$(tr -d '\r\n' < /etc/icxifi/router_id 2>/dev/null || true)"
+APIKEY="$(tr -d '\r\n' < /etc/icxifi/router_api_key 2>/dev/null || true)"
+
+[ -n "$BASE" ] && [ -n "$RID" ] && [ -n "$APIKEY" ] || exit 0
+
+if ! icxifi_db_available || ! icxifi_db_init 2>/dev/null; then
+  [ -x /usr/bin/icxifi-sync-pending ] && /usr/bin/icxifi-sync-pending || true
+  exit 0
+fi
+
+tmp="/tmp/icxifi_sync_queue.$$"
+sqlite3 -separator '|' "$ICXIFI_DB" \
+  "SELECT id,type,payload FROM sync_queue WHERE status='pending' ORDER BY created_at LIMIT 25;" > "$tmp"
+
+[ -s "$tmp" ] || { rm -f "$tmp"; exit 0; }
+
+while IFS='|' read -r id type payload; do
+  [ -n "$id" ] || continue
+  endpoint="/api/router/sync/event"
+  case "$type" in
+    sale|sales_event) endpoint="/api/router/sales/sync" ;;
+  esac
+  resp="$(curl -sS -m 20 -X POST "$BASE$endpoint" \
+    -H "Authorization: Bearer $APIKEY" \
+    -H "X-Router-ID: $RID" \
+    -H "Content-Type: application/json" \
+    -d "$payload" 2>/dev/null || true)"
+  if printf '%s' "$resp" | grep -q '"ok"[[:space:]]*:[[:space:]]*true'; then
+    sqlite3 "$ICXIFI_DB" "UPDATE sync_queue SET status='synced', updated_at=unixepoch() WHERE id=$id;"
+  else
+    sqlite3 "$ICXIFI_DB" "UPDATE sync_queue SET retry_count=retry_count+1, updated_at=unixepoch() WHERE id=$id;"
+  fi
+done < "$tmp"
+
+rm -f "$tmp"

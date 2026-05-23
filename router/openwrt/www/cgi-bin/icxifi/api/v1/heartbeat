@@ -1,0 +1,6 @@
+#!/bin/sh
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+if [ -x /usr/bin/icxifi-heartbeat ]; then
+  /usr/bin/icxifi-heartbeat >/dev/null 2>&1 || true
+fi
+printf '{"ok":true,"local":true}\n'

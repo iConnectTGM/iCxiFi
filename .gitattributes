@@ -1,3 +1,5 @@
 # Router shell scripts must use LF for BusyBox ash compatibility
 router/openwrt/usr/bin/* text eol=lf
 router/openwrt/www/cgi-bin/icxifi/* text eol=lf
+router/openwrt/usr/lib/icxifi/** text eol=lf
+router/openwrt/www/cgi-bin/icxifi/api/** text eol=lf
