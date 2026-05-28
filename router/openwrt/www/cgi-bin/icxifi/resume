@@ -42,6 +42,38 @@ client_is_authenticated() {
   ndsctl json "$ip" 2>/dev/null | grep -q '"state"[[:space:]]*:[[:space:]]*"Authenticated"'
 }
 
+auth_full_retry() {
+  ip="$1"
+  minutes="$2"
+  up="$3"
+  down="$4"
+  uq="$5"
+  dq="$6"
+  custom="$7"
+  try=1
+  while [ "$try" -le 5 ]; do
+    if ndsctl auth "$ip" "$minutes" "$up" "$down" "$uq" "$dq" "$custom" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+    try=$((try + 1))
+  done
+  return 1
+}
+
+auth_mac_retry() {
+  mac="$1"
+  try=1
+  while [ "$try" -le 5 ]; do
+    if ndsctl auth "$mac" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+    try=$((try + 1))
+  done
+  return 1
+}
+
 if [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ]; then
   BASE="$(tr -d '\r\n' < "$BASE_FILE" 2>/dev/null || true)"
   RID="$(tr -d '\r\n' < "$RID_FILE" 2>/dev/null || true)"
@@ -62,11 +94,11 @@ if [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ]; then
       ul_kbps="${ul_kbps:-10000}"
       minutes_for_auth=$(( (remaining + 59) / 60 ))
       [ "$minutes_for_auth" -lt 1 ] && minutes_for_auth=1
-      if [ -n "$clientIp" ] && ndsctl auth "$clientIp" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume|cloud" >/dev/null 2>&1; then
+      if [ -n "$clientIp" ] && auth_full_retry "$clientIp" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume|cloud"; then
         :
       elif client_is_authenticated "$clientIp"; then
         :
-      elif [ -n "$clientMac" ] && ndsctl auth "$clientMac" >/dev/null 2>&1; then
+      elif [ -n "$clientMac" ] && auth_mac_retry "$clientMac"; then
         :
       else
         printf '{"ok":false,"error":"Resume failed"}\n'
@@ -141,11 +173,11 @@ EOF_ROW
       minutes_for_auth=$(( (remaining + 59) / 60 ))
       [ "$minutes_for_auth" -lt 1 ] && minutes_for_auth=1
       auth_ok=0
-      if [ -n "$clientIp" ] && ndsctl auth "$clientIp" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume|sqlite" >/dev/null 2>&1; then
+      if [ -n "$clientIp" ] && auth_full_retry "$clientIp" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume|sqlite"; then
         auth_ok=1
       elif client_is_authenticated "$clientIp"; then
         auth_ok=1
-      elif [ -n "$s_mac" ] && ndsctl auth "$s_mac" >/dev/null 2>&1; then
+      elif [ -n "$s_mac" ] && auth_mac_retry "$s_mac"; then
         auth_ok=1
       fi
       if [ "$auth_ok" = "1" ]; then
@@ -195,11 +227,11 @@ EOF_ROW
     dl_kbps="${dl_kbps:-10000}"
     ul_kbps="${ul_kbps:-10000}"
     auth_ok=0
-    if [ -n "$clientIp" ] && ndsctl auth "$clientIp" "$mins_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume" >/dev/null 2>&1; then
+    if [ -n "$clientIp" ] && auth_full_retry "$clientIp" "$mins_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume"; then
       auth_ok=1
     elif client_is_authenticated "$clientIp"; then
       auth_ok=1
-    elif [ -n "$clientMac" ] && ndsctl auth "$clientMac" >/dev/null 2>&1; then
+    elif [ -n "$clientMac" ] && auth_mac_retry "$clientMac"; then
       auth_ok=1
     fi
     if [ "$auth_ok" = "1" ]; then
@@ -244,11 +276,11 @@ minutes_for_auth=$(( (remaining + 59) / 60 ))
 
 # Re-auth - try IP first with full ndsctl params (ndsctl uses minutes; round up to preserve seconds)
 auth_target="$clientIp"
-if ndsctl auth "$auth_target" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume" >/dev/null 2>&1; then
+if auth_full_retry "$auth_target" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume"; then
   :
 elif client_is_authenticated "$auth_target"; then
   :
-elif [ -n "$client_mac" ] && ndsctl auth "$client_mac" >/dev/null 2>&1; then
+elif [ -n "$client_mac" ] && auth_mac_retry "$client_mac"; then
   :
 else
   printf '{"ok":false,"error":"Resume failed"}\n'

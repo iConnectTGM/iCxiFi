@@ -18,6 +18,8 @@ ESP_SECRET_DIR="/etc/icxifi/esp_secrets"
 HMAC_WINDOW_SECONDS="${ICXIFI_HMAC_WINDOW_SECONDS:-300}"
 COIN_TARGET_FILE="/tmp/icxifi_coin_target"
 COIN_TARGET_MAX_AGE_SECONDS="${ICXIFI_COIN_TARGET_MAX_AGE_SECONDS:-180}"
+VEND_LOCK_DIR="/tmp/icxifi_esp_vend.lock"
+VEND_DISABLED_FILE="/tmp/icxifi_esp_vend_disabled"
 
 [ -r /usr/lib/icxifi/db/events.sh ] && . /usr/lib/icxifi/db/events.sh
 [ -r /usr/lib/icxifi/sessions/state.sh ] && . /usr/lib/icxifi/sessions/state.sh
@@ -437,6 +439,11 @@ unset IFS
 
 requestIp="${REMOTE_ADDR:-unknown}"
 
+if [ -f "$VEND_DISABLED_FILE" ]; then
+  print_status_json 503 "Service Unavailable" '{"ok":false,"error":"ESP vending temporarily disabled"}'
+  exit 0
+fi
+
 if [ -z "$amount" ] || ! is_uint "$amount"; then
   print_status_json 400 "Bad Request" '{"ok":false,"error":"amount must be numeric"}'
   exit 0
@@ -461,6 +468,24 @@ if ! retry_after="$(rate_limit_check "$requestIp")"; then
   print_status_json 429 "Too Many Requests" "{\"ok\":false,\"error\":\"Rate limit exceeded\",\"retryAfterSeconds\":${retry_after}}"
   exit 0
 fi
+
+if ! mkdir "$VEND_LOCK_DIR" 2>/dev/null; then
+  lock_age=0
+  if [ -d "$VEND_LOCK_DIR" ]; then
+    lock_age="$(($(date +%s) - $(date +%s -r "$VEND_LOCK_DIR" 2>/dev/null || echo 0)))"
+  fi
+  if is_uint "$lock_age" && [ "$lock_age" -gt 20 ]; then
+    rm -rf "$VEND_LOCK_DIR" 2>/dev/null || true
+    mkdir "$VEND_LOCK_DIR" 2>/dev/null || {
+      print_status_json 202 "Accepted" '{"ok":true,"queued":true,"busy":true}'
+      exit 0
+    }
+  else
+    print_status_json 202 "Accepted" '{"ok":true,"queued":true,"busy":true}'
+    exit 0
+  fi
+fi
+trap 'rm -rf "$VEND_LOCK_DIR" 2>/dev/null || true' EXIT HUP INT TERM
 
 if [ -z "$targetIp" ] && [ -n "$targetMac" ]; then
   targetIp="$(resolve_ip_from_mac "$targetMac")"
