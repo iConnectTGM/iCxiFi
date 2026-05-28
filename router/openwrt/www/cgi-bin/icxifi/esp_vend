@@ -16,6 +16,8 @@ APIKEY_FILE="/etc/icxifi/router_api_key"
 ESP_SECRET_FILE="/etc/icxifi/esp_secret"
 ESP_SECRET_DIR="/etc/icxifi/esp_secrets"
 HMAC_WINDOW_SECONDS="${ICXIFI_HMAC_WINDOW_SECONDS:-300}"
+COIN_TARGET_FILE="/tmp/icxifi_coin_target"
+COIN_TARGET_MAX_AGE_SECONDS="${ICXIFI_COIN_TARGET_MAX_AGE_SECONDS:-180}"
 
 [ -r /usr/lib/icxifi/db/events.sh ] && . /usr/lib/icxifi/db/events.sh
 
@@ -257,6 +259,22 @@ single_opennds_client() {
     }'
 }
 
+recent_coin_target() {
+  [ -s "$COIN_TARGET_FILE" ] || return 1
+  IFS='|' read -r target_ts target_ip target_mac < "$COIN_TARGET_FILE" || return 1
+  unset IFS
+  is_uint "$target_ts" || return 1
+  safe_ip "$target_ip" || return 1
+  now="$(date +%s)"
+  age=$((now - target_ts))
+  [ "$age" -ge 0 ] || return 1
+  [ "$age" -le "$COIN_TARGET_MAX_AGE_SECONDS" ] || return 1
+  if [ -n "$target_mac" ] && ! safe_mac "$target_mac"; then
+    target_mac=""
+  fi
+  printf '%s|%s' "$target_ip" "$target_mac"
+}
+
 queue_sale() {
   device="$1"
   amount="$2"
@@ -406,6 +424,14 @@ fi
 
 if [ -z "$targetIp" ] && [ -n "$targetMac" ]; then
   targetIp="$(resolve_ip_from_mac "$targetMac")"
+fi
+
+if [ -z "$targetIp" ]; then
+  target="$(recent_coin_target 2>/dev/null || true)"
+  if [ -n "$target" ]; then
+    targetIp="$(printf '%s' "$target" | cut -d'|' -f1)"
+    [ -z "$targetMac" ] && targetMac="$(printf '%s' "$target" | cut -d'|' -f2)"
+  fi
 fi
 
 if [ -z "$targetIp" ]; then

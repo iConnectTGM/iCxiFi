@@ -16,7 +16,8 @@
     paused: false,
     disconnectedWithTime: false,
     sessionPollId: null,
-    timerSyncId: null
+    timerSyncId: null,
+    coinTargetId: null
   };
 
   var el = {
@@ -293,6 +294,38 @@
       });
   }
 
+  function stopCoinTargetRefresh() {
+    if (state.coinTargetId) {
+      clearInterval(state.coinTargetId);
+      state.coinTargetId = null;
+    }
+  }
+
+  function registerCoinTarget() {
+    if (state.connected || state.paused || state.disconnectedWithTime || state.suspended) {
+      stopCoinTargetRefresh();
+      return Promise.resolve(false);
+    }
+    var hints = clientHintsFromEnvironment();
+    var params = [];
+    if (hints.ip && hints.ip !== "unknown") params.push("clientIp=" + encodeURIComponent(hints.ip));
+    if (hints.mac && hints.mac !== "unknown") params.push("clientMac=" + encodeURIComponent(hints.mac));
+    var path = "/coin_target" + (params.length ? "?" + params.join("&") : "");
+    return fetch(API_BASE_PRIMARY + path, { method: "GET", credentials: "omit", cache: "no-store" })
+      .then(function (r) { return r.ok; })
+      .catch(function () {
+        return fetch(API_BASE_FALLBACK + path, { method: "GET", credentials: "omit", cache: "no-store" })
+          .then(function (r2) { return r2.ok; })
+          .catch(function () { return false; });
+      });
+  }
+
+  function startCoinTargetRefresh() {
+    stopCoinTargetRefresh();
+    registerCoinTarget();
+    state.coinTargetId = setInterval(registerCoinTarget, 30000);
+  }
+
   function redirectToRegister() {
     var qs = window.location.search || "";
     window.location.replace("/register.html" + qs);
@@ -518,6 +551,7 @@
     var up = grant && grant.uploadKbps ? Number(grant.uploadKbps) : 10000;
 
     stopSessionPoll();
+    stopCoinTargetRefresh();
     state.connected = true;
     state.paused = false;
     state.disconnectedWithTime = false;
@@ -548,6 +582,7 @@
       clearInterval(timerSyncIdToClear);
     }
     stopSessionPoll();
+    stopCoinTargetRefresh();
     stopTimerSync();
     stopTimer();
     if (!wasPaused) {
@@ -563,6 +598,7 @@
     var up = grant && grant.uploadKbps ? Number(grant.uploadKbps) : 10000;
 
     stopSessionPoll();
+    stopCoinTargetRefresh();
     state.connected = false;
     state.paused = true;
     state.disconnectedWithTime = true;
@@ -584,6 +620,7 @@
 
   function openCoinModal(rate) {
     if (state.suspended) return;
+    registerCoinTarget();
     if (rate) {
       showToast("Insert PHP " + rate.amount + " at the vendo.", "info");
     }
@@ -859,6 +896,7 @@
       loadSessionStatus().then(function (restored) {
         if (!restored) {
           setStatusBox("Ready. Tap VOUCHER or WIFI RATES to connect.", null);
+          startCoinTargetRefresh();
           startSessionPoll();
         }
       });
