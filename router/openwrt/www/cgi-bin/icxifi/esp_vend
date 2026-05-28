@@ -234,6 +234,15 @@ rate_quota_for_amount() {
   printf '%s' "$value"
 }
 
+amount_is_configured_rate() {
+  check_amount="$1"
+  if [ -s "$PROFILE_FILE" ] && command -v jsonfilter >/dev/null 2>&1; then
+    jsonfilter -i "$PROFILE_FILE" -e '@.profile.rates[*].amount' 2>/dev/null | grep -qx "$check_amount" && return 0
+  fi
+  case "$check_amount" in 5|10|20) return 0 ;; esac
+  return 1
+}
+
 resolve_mac_from_ip() {
   ip="$1"
   ip neigh show "$ip" 2>/dev/null | awk '{print $5; exit}'
@@ -446,6 +455,16 @@ fi
 
 if [ -z "$amount" ] || ! is_uint "$amount"; then
   print_status_json 400 "Bad Request" '{"ok":false,"error":"amount must be numeric"}'
+  exit 0
+fi
+if [ "$amount" -gt "${ICXIFI_MAX_COIN_BATCH:-50}" ]; then
+  log_debug "esp_coin_batch_dropped deviceId=$deviceId amount=$amount requestIp=$requestIp"
+  print_json "$(printf '{"ok":true,"dropped":true,"reason":"coin_batch_too_large","amount":%s}' "$amount")"
+  exit 0
+fi
+if ! amount_is_configured_rate "$amount"; then
+  log_debug "esp_coin_amount_dropped deviceId=$deviceId amount=$amount requestIp=$requestIp"
+  print_json "$(printf '{"ok":true,"dropped":true,"reason":"coin_amount_not_configured","amount":%s}' "$amount")"
   exit 0
 fi
 if ! safe_token "$deviceId"; then
