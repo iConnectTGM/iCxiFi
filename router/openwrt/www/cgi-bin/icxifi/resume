@@ -36,6 +36,12 @@ if ! command -v ndsctl >/dev/null 2>&1; then
   exit 0
 fi
 
+client_is_authenticated() {
+  ip="$1"
+  [ -n "$ip" ] || return 1
+  ndsctl json "$ip" 2>/dev/null | grep -q '"state"[[:space:]]*:[[:space:]]*"Authenticated"'
+}
+
 if [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ]; then
   BASE="$(tr -d '\r\n' < "$BASE_FILE" 2>/dev/null || true)"
   RID="$(tr -d '\r\n' < "$RID_FILE" 2>/dev/null || true)"
@@ -57,6 +63,8 @@ if [ -s "$BASE_FILE" ] && [ -s "$RID_FILE" ] && [ -s "$APIKEY_FILE" ]; then
       minutes_for_auth=$(( (remaining + 59) / 60 ))
       [ "$minutes_for_auth" -lt 1 ] && minutes_for_auth=1
       if [ -n "$clientIp" ] && ndsctl auth "$clientIp" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume|cloud" >/dev/null 2>&1; then
+        :
+      elif client_is_authenticated "$clientIp"; then
         :
       elif [ -n "$clientMac" ] && ndsctl auth "$clientMac" >/dev/null 2>&1; then
         :
@@ -114,7 +122,7 @@ fi
 # If no paused file, check stored sessions (disconnected-with-time resume)
 if [ -z "$PAUSED_FILE" ] || ! [ -s "$PAUSED_FILE" ]; then
   if command -v icxifi_session_select >/dev/null 2>&1; then
-    sqlite_paused="$(icxifi_session_select "$clientMac" "$clientIp" "'paused'" | head -n 1 || true)"
+    sqlite_paused="$(icxifi_session_select "$clientMac" "$clientIp" "'paused','active'" | head -n 1 || true)"
     if [ -n "$sqlite_paused" ]; then
       IFS='|' read -r sid s_mac s_ip s_start s_end remaining s_status s_speed s_voucher s_source <<EOF_ROW
 $sqlite_paused
@@ -123,6 +131,11 @@ EOF_ROW
       dl_kbps="$(printf '%s' "$s_speed" | sed -n 's/.*"downloadKbps"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
       ul_kbps="$(printf '%s' "$s_speed" | sed -n 's/.*"uploadKbps"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -n 1)"
       remaining="${remaining:-0}"
+      if [ "$s_status" = "active" ]; then
+        now_epoch="$(date +%s 2>/dev/null || printf '0')"
+        remaining=$((s_end - now_epoch))
+        [ "$remaining" -lt 0 ] && remaining=0
+      fi
       dl_kbps="${dl_kbps:-10000}"
       ul_kbps="${ul_kbps:-10000}"
       minutes_for_auth=$(( (remaining + 59) / 60 ))
@@ -130,11 +143,15 @@ EOF_ROW
       auth_ok=0
       if [ -n "$clientIp" ] && ndsctl auth "$clientIp" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume|sqlite" >/dev/null 2>&1; then
         auth_ok=1
+      elif client_is_authenticated "$clientIp"; then
+        auth_ok=1
       elif [ -n "$s_mac" ] && ndsctl auth "$s_mac" >/dev/null 2>&1; then
         auth_ok=1
       fi
       if [ "$auth_ok" = "1" ]; then
-        icxifi_session_resume "${s_mac:-$clientMac}" "${clientIp:-$s_ip}" "$remaining" "$dl_kbps" "$ul_kbps" || true
+        if [ "$s_status" = "paused" ]; then
+          icxifi_session_resume "${s_mac:-$clientMac}" "${clientIp:-$s_ip}" "$remaining" "$dl_kbps" "$ul_kbps" || true
+        fi
         SESS_DIR="/tmp/icxifi_sessions"
         mkdir -p "$SESS_DIR"
         now="$(date +%s)"
@@ -179,6 +196,8 @@ EOF_ROW
     ul_kbps="${ul_kbps:-10000}"
     auth_ok=0
     if [ -n "$clientIp" ] && ndsctl auth "$clientIp" "$mins_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume" >/dev/null 2>&1; then
+      auth_ok=1
+    elif client_is_authenticated "$clientIp"; then
       auth_ok=1
     elif [ -n "$clientMac" ] && ndsctl auth "$clientMac" >/dev/null 2>&1; then
       auth_ok=1
@@ -226,6 +245,8 @@ minutes_for_auth=$(( (remaining + 59) / 60 ))
 # Re-auth - try IP first with full ndsctl params (ndsctl uses minutes; round up to preserve seconds)
 auth_target="$clientIp"
 if ndsctl auth "$auth_target" "$minutes_for_auth" "$ul_kbps" "$dl_kbps" "0" "0" "icxifi|resume" >/dev/null 2>&1; then
+  :
+elif client_is_authenticated "$auth_target"; then
   :
 elif [ -n "$client_mac" ] && ndsctl auth "$client_mac" >/dev/null 2>&1; then
   :
