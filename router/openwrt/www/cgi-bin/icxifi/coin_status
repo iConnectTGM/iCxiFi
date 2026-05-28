@@ -1,0 +1,145 @@
+#!/bin/sh
+
+set -eu
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
+DB="/etc/icxifi/icxifi.db"
+TARGET_FILE="/tmp/icxifi_coin_target"
+TARGET_MAX_AGE_SECONDS="${ICXIFI_COIN_TARGET_MAX_AGE_SECONDS:-180}"
+
+print_json() {
+  printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n%s\n' "$1"
+}
+
+urldecode() {
+  value="${1//+/ }"
+  printf '%b' "${value//%/\\x}"
+}
+
+safe_ip() {
+  case "$1" in ''|*[!0-9.]*) return 1 ;; *.*.*.*) return 0 ;; *) return 1 ;; esac
+}
+
+safe_mac() {
+  case "$1" in ''|*[!A-Fa-f0-9:-]*) return 1 ;; *) return 0 ;; esac
+}
+
+sql_escape() {
+  printf '%s' "${1:-}" | sed "s/'/''/g"
+}
+
+json_escape() {
+  printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\r//g; s/\n/\\n/g'
+}
+
+is_uint() {
+  case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac
+}
+
+resolve_mac_from_ip() {
+  ip="$1"
+  ip neigh show "$ip" 2>/dev/null | awk '{print $5; exit}'
+}
+
+clientIp=""
+clientMac=""
+
+IFS='&'
+for pair in ${QUERY_STRING:-}; do
+  key="${pair%%=*}"
+  val="${pair#*=}"
+  [ "$key" = "$pair" ] && val=""
+  val="$(urldecode "$val")"
+  case "$key" in
+    clientIp|clientip|ip) clientIp="$val" ;;
+    clientMac|clientmac|mac) clientMac="$val" ;;
+  esac
+done
+unset IFS
+
+[ -n "$clientIp" ] && [ "$clientIp" != "unknown" ] || clientIp="${REMOTE_ADDR:-}"
+if ! safe_ip "$clientIp"; then
+  print_json '{"ok":false,"error":"Invalid client IP"}'
+  exit 0
+fi
+
+if [ -n "$clientMac" ] && [ "$clientMac" != "unknown" ] && ! safe_mac "$clientMac"; then
+  clientMac=""
+fi
+[ -n "$clientMac" ] || clientMac="$(resolve_mac_from_ip "$clientIp" || true)"
+
+now="$(date +%s)"
+targetActive=false
+targetAge=0
+targetIp=""
+targetMac=""
+if [ -s "$TARGET_FILE" ]; then
+  IFS='|' read -r targetTs targetIp targetMac < "$TARGET_FILE" || true
+  unset IFS
+  if is_uint "${targetTs:-0}"; then
+    targetAge=$((now - targetTs))
+    if [ "$targetAge" -ge 0 ] && [ "$targetAge" -le "$TARGET_MAX_AGE_SECONDS" ]; then
+      if [ "$targetIp" = "$clientIp" ] || { [ -n "$clientMac" ] && [ "$targetMac" = "$clientMac" ]; }; then
+        targetActive=true
+      fi
+    fi
+  fi
+fi
+
+amount=0
+voucherCode=""
+deviceId=""
+saleAge=-1
+sessionActive=false
+remainingSeconds=0
+
+if command -v sqlite3 >/dev/null 2>&1 && [ -s "$DB" ]; then
+  ip_sql="$(sql_escape "$clientIp")"
+  mac_sql="$(sql_escape "$clientMac")"
+  row="$(sqlite3 -separator '|' "$DB" "SELECT id,amount,COALESCE(device_id,''),COALESCE(voucher_code,''),unixepoch()-timestamp
+    FROM sales_events
+    WHERE source='coin'
+      AND (client_ip='$ip_sql' OR ('$mac_sql' != '' AND client_mac='$mac_sql'))
+    ORDER BY id DESC LIMIT 1;" 2>/dev/null || true)"
+  if [ -z "$row" ]; then
+    row="$(sqlite3 -separator '|' "$DB" "SELECT id,amount,COALESCE(device_id,''),COALESCE(voucher_code,''),unixepoch()-timestamp
+      FROM sales_events
+      WHERE source='coin'
+      ORDER BY id DESC LIMIT 1;" 2>/dev/null || true)"
+  fi
+  if [ -n "$row" ]; then
+    IFS='|' read -r saleId amount deviceId voucherCode saleAge <<EOF_ROW
+$row
+EOF_ROW
+    unset IFS
+    is_uint "$amount" || amount=0
+    is_uint "$saleAge" || saleAge=-1
+  fi
+
+  session_row="$(sqlite3 -separator '|' "$DB" "SELECT status, MAX(end_time-unixepoch(),0)
+    FROM sessions
+    WHERE status='active'
+      AND (ip='$ip_sql' OR ('$mac_sql' != '' AND mac='$mac_sql'))
+    ORDER BY id DESC LIMIT 1;" 2>/dev/null || true)"
+  if [ -n "$session_row" ]; then
+    IFS='|' read -r s_status remainingSeconds <<EOF_SESSION
+$session_row
+EOF_SESSION
+    unset IFS
+    if [ "$s_status" = "active" ] && is_uint "$remainingSeconds" && [ "$remainingSeconds" -gt 0 ]; then
+      sessionActive=true
+    fi
+  fi
+fi
+
+print_json "$(printf '{"ok":true,"clientIp":"%s","clientMac":"%s","targetActive":%s,"targetAgeSeconds":%s,"sessionActive":%s,"remainingSeconds":%s,"lastCoin":{"amount":%s,"deviceId":"%s","voucherCode":"%s","ageSeconds":%s}}' \
+  "$(json_escape "$clientIp")" \
+  "$(json_escape "$clientMac")" \
+  "$targetActive" \
+  "$targetAge" \
+  "$sessionActive" \
+  "$remainingSeconds" \
+  "$amount" \
+  "$(json_escape "$deviceId")" \
+  "$(json_escape "$voucherCode")" \
+  "$saleAge")"

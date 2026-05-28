@@ -111,13 +111,14 @@
 
   <dialog id="coinModal" class="coin-modal">
     <h3>Insert Coin</h3>
-    <p>Insert coins at the vendo. The coin slot signal is handled by the ESP device.</p>
+    <p id="coinStateText">Waiting for coin slot signal from the ESP device.</p>
+    <p id="coinAmountText" class="coin-amount">Inserted: PHP 0</p>
     <div class="coin-actions">
       <button id="closeCoinModal" class="btn btn-dark compact">CLOSE</button>
     </div>
   </dialog>
 
   <noscript><p class="noscript-msg">JavaScript is required to connect. Please enable it and reload.</p></noscript>
-  <script src="/app.js?v=20260522-countdown" defer></script>
+  <script src="/app.js?v=20260523-coin-status" defer></script>
 </body>
 </html>
