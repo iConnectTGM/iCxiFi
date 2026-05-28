@@ -396,7 +396,13 @@ static void handleStatus() {
   doc["coinEnabled"] = coinEnabled;
   doc["coinForcedOff"] = coinForcedOff;
   doc["coinPin"] = pinLabel(cfg.coinPin);
+  doc["coinPinGpio"] = cfg.coinPin;
+  doc["coinPinLevel"] = digitalRead(cfg.coinPin) == HIGH ? "HIGH" : "LOW";
+  doc["coinPulseCount"] = pulseCount;
+  doc["coinLastPulseAgeMs"] = lastPulseMs > 0 ? (millis() - lastPulseMs) : 0;
   doc["coinSetPin"] = pinLabel(cfg.coinSetPin);
+  doc["coinSetPinGpio"] = cfg.coinSetPin;
+  doc["coinSetLevel"] = digitalRead(cfg.coinSetPin) == HIGH ? "HIGH" : "LOW";
   doc["blinkerPin"] = pinLabel(LED_PIN);
   doc["routerActivated"] = routerActivated;
   doc["routerState"] = routerState;
