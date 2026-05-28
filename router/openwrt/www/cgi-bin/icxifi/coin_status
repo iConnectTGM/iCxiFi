@@ -90,30 +90,29 @@ amount=0
 voucherCode=""
 deviceId=""
 saleAge=-1
+saleId=0
 sessionActive=false
 remainingSeconds=0
 
 if command -v sqlite3 >/dev/null 2>&1 && [ -s "$DB" ]; then
   ip_sql="$(sql_escape "$clientIp")"
   mac_sql="$(sql_escape "$clientMac")"
-  row="$(sqlite3 -separator '|' "$DB" "SELECT id,amount,COALESCE(device_id,''),COALESCE(voucher_code,''),unixepoch()-timestamp
-    FROM sales_events
-    WHERE source='coin'
-      AND (client_ip='$ip_sql' OR ('$mac_sql' != '' AND client_mac='$mac_sql'))
-    ORDER BY id DESC LIMIT 1;" 2>/dev/null || true)"
-  if [ -z "$row" ]; then
+  if [ "$targetActive" = "true" ] && is_uint "${targetTs:-}" && [ "$targetTs" -gt 0 ]; then
     row="$(sqlite3 -separator '|' "$DB" "SELECT id,amount,COALESCE(device_id,''),COALESCE(voucher_code,''),unixepoch()-timestamp
       FROM sales_events
       WHERE source='coin'
+        AND timestamp >= $targetTs
+        AND (client_ip='$ip_sql' OR ('$mac_sql' != '' AND client_mac='$mac_sql'))
       ORDER BY id DESC LIMIT 1;" 2>/dev/null || true)"
-  fi
-  if [ -n "$row" ]; then
-    IFS='|' read -r saleId amount deviceId voucherCode saleAge <<EOF_ROW
+    if [ -n "$row" ]; then
+      IFS='|' read -r saleId amount deviceId voucherCode saleAge <<EOF_ROW
 $row
 EOF_ROW
-    unset IFS
-    is_uint "$amount" || amount=0
-    is_uint "$saleAge" || saleAge=-1
+      unset IFS
+      is_uint "$saleId" || saleId=0
+      is_uint "$amount" || amount=0
+      is_uint "$saleAge" || saleAge=-1
+    fi
   fi
 
   session_row="$(sqlite3 -separator '|' "$DB" "SELECT status, MAX(end_time-unixepoch(),0)
@@ -132,13 +131,14 @@ EOF_SESSION
   fi
 fi
 
-print_json "$(printf '{"ok":true,"clientIp":"%s","clientMac":"%s","targetActive":%s,"targetAgeSeconds":%s,"sessionActive":%s,"remainingSeconds":%s,"lastCoin":{"amount":%s,"deviceId":"%s","voucherCode":"%s","ageSeconds":%s}}' \
+print_json "$(printf '{"ok":true,"clientIp":"%s","clientMac":"%s","targetActive":%s,"targetAgeSeconds":%s,"sessionActive":%s,"remainingSeconds":%s,"lastCoin":{"id":%s,"amount":%s,"deviceId":"%s","voucherCode":"%s","ageSeconds":%s}}' \
   "$(json_escape "$clientIp")" \
   "$(json_escape "$clientMac")" \
   "$targetActive" \
   "$targetAge" \
   "$sessionActive" \
   "$remainingSeconds" \
+  "$saleId" \
   "$amount" \
   "$(json_escape "$deviceId")" \
   "$(json_escape "$voucherCode")" \

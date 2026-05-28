@@ -425,11 +425,12 @@
       .then(function (j) {
         if (!j || !j.ok) return false;
         var amount = j.lastCoin && Number(j.lastCoin.amount || 0);
+        var hasFreshCoin = amount > 0 && j.lastCoin && Number(j.lastCoin.id || 0) > 0;
         if (el.coinAmountText) {
           el.coinAmountText.textContent = "PHP " + (amount > 0 ? amount : 0);
         }
         if (el.coinTimeText) {
-          var seconds = j.sessionActive ? Number(j.remainingSeconds || 0) : minutesForAmount(amount) * 60;
+          var seconds = hasFreshCoin && j.sessionActive ? Number(j.remainingSeconds || 0) : minutesForAmount(amount) * 60;
           el.coinTimeText.textContent = formatShortDuration(seconds);
         }
         if (el.coinVoucherText) {
@@ -437,7 +438,7 @@
           el.coinVoucherText.textContent = code || "waiting";
         }
         if (el.coinStateText) {
-          if (j.sessionActive) {
+          if (hasFreshCoin && j.sessionActive) {
             el.coinStateText.textContent = state.connected ? "Payment received. Adding your time..." : "Payment received. Connecting your device...";
           } else if (amount > 0 && j.lastCoin.ageSeconds >= 0 && j.lastCoin.ageSeconds < 120) {
             el.coinStateText.textContent = "Coin received. Preparing your time...";
@@ -447,7 +448,7 @@
             el.coinStateText.textContent = "Keep this portal open, then insert coin at the vendo.";
           }
         }
-        if (j.sessionActive) {
+        if (hasFreshCoin && j.sessionActive) {
           loadSessionStatus(true).then(function (restored) {
             if (restored) {
               stopCoinStatusPoll();
