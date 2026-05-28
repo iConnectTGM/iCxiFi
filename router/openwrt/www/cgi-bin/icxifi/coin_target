@@ -70,5 +70,5 @@ tmp="${TARGET_FILE}.$$"
 printf '%s|%s|%s\n' "$now" "$clientIp" "$clientMac" > "$tmp"
 mv -f "$tmp" "$TARGET_FILE"
 
-print_json "$(printf '{"ok":true,"clientIp":"%s","clientMac":"%s","expiresInSeconds":180}' \
-  "$(json_escape "$clientIp")" "$(json_escape "$clientMac")")"
+print_json "$(printf '{"ok":true,"clientIp":"%s","clientMac":"%s","targetTs":%s,"expiresInSeconds":180}' \
+  "$(json_escape "$clientIp")" "$(json_escape "$clientMac")" "$now")"

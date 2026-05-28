@@ -43,6 +43,7 @@ resolve_mac_from_ip() {
 
 clientIp=""
 clientMac=""
+requestedTargetTs=""
 
 IFS='&'
 for pair in ${QUERY_STRING:-}; do
@@ -53,6 +54,7 @@ for pair in ${QUERY_STRING:-}; do
   case "$key" in
     clientIp|clientip|ip) clientIp="$val" ;;
     clientMac|clientmac|mac) clientMac="$val" ;;
+    targetTs|targetts) requestedTargetTs="$val" ;;
   esac
 done
 unset IFS
@@ -83,6 +85,16 @@ if [ -s "$TARGET_FILE" ]; then
         targetActive=true
       fi
     fi
+  fi
+fi
+
+if is_uint "${requestedTargetTs:-}" && [ "$requestedTargetTs" -gt 0 ]; then
+  targetTs="$requestedTargetTs"
+  targetAge=$((now - targetTs))
+  if [ "$targetAge" -ge 0 ] && [ "$targetAge" -le "$TARGET_MAX_AGE_SECONDS" ]; then
+    targetActive=true
+  else
+    targetActive=false
   fi
 fi
 
@@ -131,10 +143,11 @@ EOF_SESSION
   fi
 fi
 
-print_json "$(printf '{"ok":true,"clientIp":"%s","clientMac":"%s","targetActive":%s,"targetAgeSeconds":%s,"sessionActive":%s,"remainingSeconds":%s,"lastCoin":{"id":%s,"amount":%s,"deviceId":"%s","voucherCode":"%s","ageSeconds":%s}}' \
+print_json "$(printf '{"ok":true,"clientIp":"%s","clientMac":"%s","targetActive":%s,"targetTs":%s,"targetAgeSeconds":%s,"sessionActive":%s,"remainingSeconds":%s,"lastCoin":{"id":%s,"amount":%s,"deviceId":"%s","voucherCode":"%s","ageSeconds":%s}}' \
   "$(json_escape "$clientIp")" \
   "$(json_escape "$clientMac")" \
   "$targetActive" \
+  "${targetTs:-0}" \
   "$targetAge" \
   "$sessionActive" \
   "$remainingSeconds" \

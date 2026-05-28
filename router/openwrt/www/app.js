@@ -21,6 +21,7 @@
     coinStatusId: null,
     coinWaitTimerId: null,
     coinWaitEndsAtMs: null,
+    coinTargetTs: null,
     coinModalOpen: false
   };
 
@@ -391,11 +392,18 @@
     if (state.connected) params.push("mode=extend");
     var path = "/coin_target" + (params.length ? "?" + params.join("&") : "");
     return fetch(API_BASE_PRIMARY + path, { method: "GET", credentials: "omit", cache: "no-store" })
-      .then(function (r) { return r.ok; })
+      .then(function (r) { return r.ok ? r.json() : null; })
       .catch(function () {
         return fetch(API_BASE_FALLBACK + path, { method: "GET", credentials: "omit", cache: "no-store" })
-          .then(function (r2) { return r2.ok; })
-          .catch(function () { return false; });
+          .then(function (r2) { return r2.ok ? r2.json() : null; })
+          .catch(function () { return null; });
+      })
+      .then(function (j) {
+        if (j && j.ok && j.targetTs) {
+          state.coinTargetTs = Number(j.targetTs || 0);
+          return true;
+        }
+        return false;
       });
   }
 
@@ -410,6 +418,7 @@
     var params = [];
     if (hints.ip && hints.ip !== "unknown") params.push("clientIp=" + encodeURIComponent(hints.ip));
     if (hints.mac && hints.mac !== "unknown") params.push("clientMac=" + encodeURIComponent(hints.mac));
+    if (state.coinTargetTs) params.push("targetTs=" + encodeURIComponent(String(state.coinTargetTs)));
     return "/coin_status" + (params.length ? "?" + params.join("&") : "");
   }
 
@@ -769,7 +778,7 @@
 
   function openCoinModal(rate) {
     if (state.suspended) return;
-    registerCoinTarget();
+    state.coinTargetTs = null;
     resetCoinModalUi(180);
     if (rate) {
       showToast("Insert PHP " + rate.amount + " at the vendo.", "info");
@@ -782,7 +791,9 @@
     }
     state.coinModalOpen = true;
     startCoinWaitTimer();
-    startCoinStatusPoll();
+    registerCoinTarget().then(function () {
+      if (state.coinModalOpen) startCoinStatusPoll();
+    });
   }
 
   function redeemVoucher(code) {
