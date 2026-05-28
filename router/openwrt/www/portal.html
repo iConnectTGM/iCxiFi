@@ -111,14 +111,31 @@
 
   <dialog id="coinModal" class="coin-modal">
     <h3>Insert Coin</h3>
-    <p id="coinStateText">Waiting for coin slot signal from the ESP device.</p>
-    <p id="coinAmountText" class="coin-amount">Inserted: PHP 0</p>
+    <p id="coinStateText">Keep this window open, then insert coin at the vendo.</p>
+    <div class="coin-meter">
+      <div>
+        <span class="coin-label">Waiting</span>
+        <strong id="coinWaitText">180s</strong>
+      </div>
+      <div>
+        <span class="coin-label">Inserted</span>
+        <strong id="coinAmountText">PHP 0</strong>
+      </div>
+      <div>
+        <span class="coin-label">Time</span>
+        <strong id="coinTimeText">0m 0s</strong>
+      </div>
+    </div>
+    <div class="coin-voucher-line">
+      Voucher: <span id="coinVoucherText">waiting</span>
+    </div>
     <div class="coin-actions">
-      <button id="closeCoinModal" class="btn btn-dark compact">CLOSE</button>
+      <button id="closeCoinModal" class="btn btn-dark compact">CANCEL</button>
+      <button id="coinDoneBtn" class="btn btn-blue compact">I'M DONE PAYING</button>
     </div>
   </dialog>
 
   <noscript><p class="noscript-msg">JavaScript is required to connect. Please enable it and reload.</p></noscript>
-  <script src="/app.js?v=20260523-coin-status" defer></script>
+  <script src="/app.js?v=20260528-juanfi-coin-ux" defer></script>
 </body>
 </html>

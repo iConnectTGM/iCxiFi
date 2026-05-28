@@ -407,19 +407,63 @@ body {
   color: var(--muted);
 }
 
-.coin-amount {
-  color: var(--text) !important;
-  font-size: 1.1rem !important;
+.coin-meter {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.coin-meter > div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(4, 8, 14, 0.65);
+  padding: 10px 8px;
+  text-align: center;
+}
+
+.coin-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.coin-meter strong {
+  display: block;
+  color: var(--text);
+  font-size: 1rem;
   font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.coin-voucher-line {
+  border: 1px solid rgba(143, 207, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(143, 207, 255, 0.08);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.coin-voucher-line span {
+  color: var(--title);
 }
 
 .coin-actions {
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .coin-actions .btn {
-  min-width: 120px;
+  min-width: 0;
 }
 
 .coin-modal::backdrop {
@@ -450,6 +494,14 @@ body {
 
   .timer-block {
     padding: 10px 6px;
+  }
+
+  .coin-meter {
+    grid-template-columns: 1fr;
+  }
+
+  .coin-actions {
+    grid-template-columns: 1fr;
   }
 
   .num {

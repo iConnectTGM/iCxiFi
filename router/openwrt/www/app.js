@@ -18,7 +18,10 @@
     sessionPollId: null,
     timerSyncId: null,
     coinTargetId: null,
-    coinStatusId: null
+    coinStatusId: null,
+    coinWaitTimerId: null,
+    coinWaitEndsAtMs: null,
+    coinModalOpen: false
   };
 
   var el = {
@@ -40,6 +43,10 @@
     coinModal: document.getElementById("coinModal"),
     coinStateText: document.getElementById("coinStateText"),
     coinAmountText: document.getElementById("coinAmountText"),
+    coinWaitText: document.getElementById("coinWaitText"),
+    coinTimeText: document.getElementById("coinTimeText"),
+    coinVoucherText: document.getElementById("coinVoucherText"),
+    coinDoneBtn: document.getElementById("coinDoneBtn"),
     insertCoinBtn: document.getElementById("insertCoinBtn"),
     showRatesBtn: document.getElementById("showRatesBtn"),
     showVoucherBtn: document.getElementById("showVoucherBtn"),
@@ -311,6 +318,60 @@
     }
   }
 
+  function stopCoinWaitTimer() {
+    if (state.coinWaitTimerId) {
+      clearInterval(state.coinWaitTimerId);
+      state.coinWaitTimerId = null;
+    }
+  }
+
+  function formatShortDuration(seconds) {
+    var secs = Math.max(0, Math.floor(Number(seconds) || 0));
+    var days = Math.floor(secs / 86400);
+    secs -= days * 86400;
+    var hours = Math.floor(secs / 3600);
+    secs -= hours * 3600;
+    var mins = Math.floor(secs / 60);
+    secs -= mins * 60;
+    if (days > 0) return days + "d " + hours + "h";
+    if (hours > 0) return hours + "h " + mins + "m";
+    return mins + "m " + secs + "s";
+  }
+
+  function minutesForAmount(amount) {
+    var amt = Number(amount || 0);
+    var rates = state.profile && state.profile.rates && state.profile.rates.length ? state.profile.rates : DEFAULT_RATES;
+    for (var i = 0; i < rates.length; i += 1) {
+      if (Number(rates[i].amount) === amt) {
+        return Number(rates[i].minutes || 0);
+      }
+    }
+    return amt > 0 ? amt : 0;
+  }
+
+  function resetCoinModalUi(waitSeconds) {
+    var wait = Number(waitSeconds || 180);
+    state.coinWaitEndsAtMs = Date.now() + wait * 1000;
+    if (el.coinStateText) el.coinStateText.textContent = "Keep this window open, then insert coin at the vendo.";
+    if (el.coinAmountText) el.coinAmountText.textContent = "PHP 0";
+    if (el.coinTimeText) el.coinTimeText.textContent = "0m 0s";
+    if (el.coinVoucherText) el.coinVoucherText.textContent = "waiting";
+    if (el.coinWaitText) el.coinWaitText.textContent = wait + "s";
+  }
+
+  function startCoinWaitTimer() {
+    stopCoinWaitTimer();
+    state.coinWaitTimerId = setInterval(function () {
+      if (!state.coinWaitEndsAtMs || !el.coinWaitText) return;
+      var remaining = Math.max(0, Math.ceil((state.coinWaitEndsAtMs - Date.now()) / 1000));
+      el.coinWaitText.textContent = remaining + "s";
+      if (remaining <= 0) {
+        if (el.coinStateText) el.coinStateText.textContent = "Coin window expired. Tap Insert Coin to try again.";
+        stopCoinWaitTimer();
+      }
+    }, 1000);
+  }
+
   function registerCoinTarget() {
     if (state.connected || state.paused || state.disconnectedWithTime || state.suspended) {
       stopCoinTargetRefresh();
@@ -357,13 +418,21 @@
         if (!j || !j.ok) return false;
         var amount = j.lastCoin && Number(j.lastCoin.amount || 0);
         if (el.coinAmountText) {
-          el.coinAmountText.textContent = "Inserted: PHP " + (amount > 0 ? amount : 0);
+          el.coinAmountText.textContent = "PHP " + (amount > 0 ? amount : 0);
+        }
+        if (el.coinTimeText) {
+          var seconds = j.sessionActive ? Number(j.remainingSeconds || 0) : minutesForAmount(amount) * 60;
+          el.coinTimeText.textContent = formatShortDuration(seconds);
+        }
+        if (el.coinVoucherText) {
+          var code = j.lastCoin && j.lastCoin.voucherCode ? String(j.lastCoin.voucherCode) : "";
+          el.coinVoucherText.textContent = code || "waiting";
         }
         if (el.coinStateText) {
           if (j.sessionActive) {
-            el.coinStateText.textContent = "Coin received. Connecting...";
+            el.coinStateText.textContent = "Payment received. Connecting your device...";
           } else if (amount > 0 && j.lastCoin.ageSeconds >= 0 && j.lastCoin.ageSeconds < 120) {
-            el.coinStateText.textContent = "Coin received. Authenticating your device...";
+            el.coinStateText.textContent = "Coin received. Preparing your time...";
           } else if (j.targetActive) {
             el.coinStateText.textContent = "Waiting for coin slot signal from the ESP device.";
           } else {
@@ -374,6 +443,7 @@
           loadSessionStatus(true).then(function (restored) {
             if (restored) {
               stopCoinStatusPoll();
+              stopCoinWaitTimer();
               if (el.coinModal && typeof el.coinModal.close === "function") el.coinModal.close();
               showToast("Connected.", "ok");
             }
@@ -616,6 +686,7 @@
     stopSessionPoll();
     stopCoinTargetRefresh();
     stopCoinStatusPoll();
+    stopCoinWaitTimer();
     state.connected = true;
     state.paused = false;
     state.disconnectedWithTime = false;
@@ -648,6 +719,7 @@
     stopSessionPoll();
     stopCoinTargetRefresh();
     stopCoinStatusPoll();
+    stopCoinWaitTimer();
     stopTimerSync();
     stopTimer();
     if (!wasPaused) {
@@ -665,6 +737,7 @@
     stopSessionPoll();
     stopCoinTargetRefresh();
     stopCoinStatusPoll();
+    stopCoinWaitTimer();
     state.connected = false;
     state.paused = true;
     state.disconnectedWithTime = true;
@@ -687,16 +760,18 @@
   function openCoinModal(rate) {
     if (state.suspended) return;
     registerCoinTarget();
-    if (el.coinAmountText) el.coinAmountText.textContent = "Inserted: PHP 0";
-    if (el.coinStateText) el.coinStateText.textContent = "Waiting for coin slot signal from the ESP device.";
+    resetCoinModalUi(180);
     if (rate) {
       showToast("Insert PHP " + rate.amount + " at the vendo.", "info");
+      if (el.coinTimeText) el.coinTimeText.textContent = formatShortDuration(Number(rate.minutes || 0) * 60);
     }
     if (el.coinModal && typeof el.coinModal.showModal === "function") {
       el.coinModal.showModal();
     } else {
       showToast("Insert coins at the vendo. ESP will process the coin slot signal.", "info");
     }
+    state.coinModalOpen = true;
+    startCoinWaitTimer();
     startCoinStatusPoll();
   }
 
@@ -806,8 +881,33 @@
       if (el.coinModal && typeof el.coinModal.close === "function") {
         el.coinModal.close();
       }
+      state.coinModalOpen = false;
       stopCoinStatusPoll();
+      stopCoinWaitTimer();
     });
+
+    if (el.coinDoneBtn) {
+      el.coinDoneBtn.addEventListener("click", function () {
+        el.coinDoneBtn.disabled = true;
+        if (el.coinStateText) el.coinStateText.textContent = "Checking payment...";
+        loadSessionStatus(true).then(function (restored) {
+          el.coinDoneBtn.disabled = false;
+          if (restored) {
+            stopCoinStatusPoll();
+            stopCoinWaitTimer();
+            if (el.coinModal && typeof el.coinModal.close === "function") el.coinModal.close();
+            showToast("Connected.", "ok");
+            return;
+          }
+          loadCoinStatus().then(function () {
+            showToast("Still waiting for coin signal.", "info");
+          });
+        }).catch(function () {
+          el.coinDoneBtn.disabled = false;
+          showToast("Could not check payment yet.", "error");
+        });
+      });
+    }
 
     el.showRatesBtn.addEventListener("click", function () {
       if (state.suspended) return;
