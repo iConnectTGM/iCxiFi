@@ -146,7 +146,10 @@
     if (el.pauseBtn) el.pauseBtn.classList.toggle("hidden", !connected || !!paused || !!disconnectedWithTime);
     el.resumeBtn.classList.add("hidden");
     if (hasTime) {
-      if (el.insertCoinBtn) el.insertCoinBtn.style.display = "none";
+      if (el.insertCoinBtn) {
+        el.insertCoinBtn.style.display = connected && !paused && !disconnectedWithTime ? "" : "none";
+        el.insertCoinBtn.textContent = connected && !paused && !disconnectedWithTime ? "ADD TIME" : "INSERT COIN";
+      }
       if (el.showRatesBtn) el.showRatesBtn.style.display = "none";
       if (el.showVoucherBtn) el.showVoucherBtn.style.display = "none";
       if (el.ratesPanel) el.ratesPanel.classList.add("hidden");
@@ -352,7 +355,11 @@
   function resetCoinModalUi(waitSeconds) {
     var wait = Number(waitSeconds || 180);
     state.coinWaitEndsAtMs = Date.now() + wait * 1000;
-    if (el.coinStateText) el.coinStateText.textContent = "Keep this window open, then insert coin at the vendo.";
+    if (el.coinStateText) {
+      el.coinStateText.textContent = state.connected
+        ? "Keep this window open, then insert coin to add more time."
+        : "Keep this window open, then insert coin at the vendo.";
+    }
     if (el.coinAmountText) el.coinAmountText.textContent = "PHP 0";
     if (el.coinTimeText) el.coinTimeText.textContent = "0m 0s";
     if (el.coinVoucherText) el.coinVoucherText.textContent = "waiting";
@@ -373,7 +380,7 @@
   }
 
   function registerCoinTarget() {
-    if (state.connected || state.paused || state.disconnectedWithTime || state.suspended) {
+    if (state.paused || state.disconnectedWithTime || state.suspended) {
       stopCoinTargetRefresh();
       return Promise.resolve(false);
     }
@@ -381,6 +388,7 @@
     var params = [];
     if (hints.ip && hints.ip !== "unknown") params.push("clientIp=" + encodeURIComponent(hints.ip));
     if (hints.mac && hints.mac !== "unknown") params.push("clientMac=" + encodeURIComponent(hints.mac));
+    if (state.connected) params.push("mode=extend");
     var path = "/coin_target" + (params.length ? "?" + params.join("&") : "");
     return fetch(API_BASE_PRIMARY + path, { method: "GET", credentials: "omit", cache: "no-store" })
       .then(function (r) { return r.ok; })
@@ -430,7 +438,7 @@
         }
         if (el.coinStateText) {
           if (j.sessionActive) {
-            el.coinStateText.textContent = "Payment received. Connecting your device...";
+            el.coinStateText.textContent = state.connected ? "Payment received. Adding your time..." : "Payment received. Connecting your device...";
           } else if (amount > 0 && j.lastCoin.ageSeconds >= 0 && j.lastCoin.ageSeconds < 120) {
             el.coinStateText.textContent = "Coin received. Preparing your time...";
           } else if (j.targetActive) {
@@ -499,6 +507,7 @@
     }
 
     el.insertCoinBtn.style.display = "";
+    el.insertCoinBtn.textContent = "INSERT COIN";
     el.showRatesBtn.style.display = "";
     el.showVoucherBtn.style.display = "";
   }
